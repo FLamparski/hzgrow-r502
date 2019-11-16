@@ -33,6 +33,7 @@ where TX: Write<u8>,
     /// TODO: Add better error results.
     pub fn send_command(&mut self, cmd: Command) -> Result<Reply, ()> {
         self.cmd_buffer.clear();
+        self.received.clear();
         let response_len = self.prepare_cmd(cmd);
 
         let cmd_bytes = &self.cmd_buffer[..];
@@ -40,9 +41,11 @@ where TX: Write<u8>,
             block!(self.tx.write(*byte)).ok();
         }
 
-        for i in 0..response_len {
+        block!(self.tx.flush()).ok();
+
+        for _ in 0..response_len {
             if let Some(byte) = block!(self.rx.read()).ok() {
-                self.received[i] = byte;
+                self.received.push(byte);
             } else {
                 return Result::Err(());
             }
@@ -82,7 +85,7 @@ where TX: Write<u8>,
 
     fn compute_checksum(&self) -> u16 {
         let mut checksum = 0u16;
-        let check_end = self.cmd_buffer.len() - 2;
+        let check_end = self.cmd_buffer.len();
         let checked_bytes = &self.cmd_buffer[6..check_end];
         for byte in checked_bytes {
             checksum += (*byte) as u16;
@@ -109,8 +112,8 @@ where TX: Write<u8>,
                 Some(Reply::ReadSysPara {
                     address: BigEndian::read_u32(&self.received[2..6]),
                     confirmation_code: self.received[9],
-                    checksum: BigEndian::read_u16(&self.received[25..27]),
-                    system_parameters: SystemParameters::from_payload(&self.received[9..25])
+                    checksum: BigEndian::read_u16(&self.received[26..28]),
+                    system_parameters: SystemParameters::from_payload(&self.received[10..26])
                 })
             },
             _ => None,

@@ -1,0 +1,18 @@
+# packet header
+ef 01       | magic number
+ff ff ff ff | address
+07          | package identifier
+00 13       | length = 16 + 3 (0x0f + 0x03) = 19 (0x13)
+00          | confirmation (0x00 = ok)
+
+# packet contents
+00 00       | status register
+00 00       | system identifier code (supposedly 0x0009)
+00 c8       | fingerprint library size (0xc8 = 200)
+00 03       | security level
+ff ff ff ff | address
+00 02       | packet size code
+00 06       | baud setting
+
+# packet trailer
+04 e9       | checksum
