@@ -142,3 +142,127 @@ for SystemParameters {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestTx;
+    struct TestRx;
+    
+    impl Write<u8> for TestTx {
+        type Error = ();
+        fn write(&mut self, _word: u8) -> nb::Result<(), Self::Error> {
+            return Ok(());
+        }
+        fn flush(&mut self) -> nb::Result<(), Self::Error> {
+            return Ok(());
+        }
+    }
+
+    impl Read<u8> for TestRx {
+        type Error = ();
+        fn read(&mut self) -> nb::Result<u8, Self::Error> {
+            return Ok(0u8);
+        }
+    }
+    
+    #[test]
+    fn checksum_tests() {
+        // given: a r502 instance
+        let mut r502 = R502::new(TestTx, TestRx);
+        r502.cmd_buffer.clear();
+
+        // and: some data to compute a checksum of
+        r502.write_cmd_bytes(&[0xef, 0x01, 0xff, 0xff, 0xff, 0xff, 0xc0, 0xc1]);
+
+        // when: computing the command checksum
+        // then: the checksum is correct
+        assert_eq!(r502.compute_checksum(), 0x0181u16);
+    }
+
+    #[test]
+    fn test_read_sys_para_serialisation() {
+        // given: a r502 instance
+        let mut r502 = R502::new(TestTx, TestRx);
+        r502.cmd_buffer.clear();
+        r502.received.clear();
+
+        // when: preparing a ReadSysPara command
+        r502.prepare_cmd(Command::ReadSysPara { address: 0xffffffff });
+
+        // then: the resulting packet length is correct
+        assert_eq!(r502.cmd_buffer.len(), 12);
+        // and: the packet is correct
+        assert_eq!(&r502.cmd_buffer[..], &[
+            0xef,
+            0x01,
+            0xff,
+            0xff,
+            0xff,
+            0xff,
+            0x01,
+            0x00,
+            0x03,
+            0x0f,
+            0x00,
+            0x13,
+        ]);
+    }
+
+    #[test]
+    fn test_read_sys_para_deserialisation() {
+        // given: a r502 instance
+        let mut r502 = R502::new(TestTx, TestRx);
+        r502.cmd_buffer.clear();
+        r502.received.clear();
+
+        // and: a reply in the receive buffer
+        r502.received.try_extend_from_slice(&[
+            0xef,
+            0x01,
+            0xff,
+            0xff,
+            0xff,
+            0xff,
+            0x07,
+            0x00,
+            0x13,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0xc8,
+            0x00,
+            0x03,
+            0xff,
+            0xff,
+            0xff,
+            0xff,
+            0x00,
+            0x02,
+            0x00,
+            0x06,
+            0x04,
+            0xe9,
+        ]).unwrap();
+
+        // when: parsing a reply
+        let r = r502.parse_reply();
+
+        // then: reply is ok
+        assert_eq!(r.is_some(), true);
+
+        // and: the reply is correct
+        let reply = r.unwrap();
+        match reply {
+            Reply::ReadSysPara { address, confirmation_code: _, system_parameters, checksum: _ } => {
+                assert_eq!(address, 0xffffffff);
+                assert_eq!(system_parameters.finger_library_size, 200);
+            },
+            _ => panic!("Expected Reply::ReadSysPara, got something else!"),
+        };
+    }
+}
