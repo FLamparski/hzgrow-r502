@@ -2,8 +2,11 @@ use embedded_hal::{serial::{Read, Write}};
 use arrayvec::ArrayVec;
 use nb::block;
 use byteorder::{ByteOrder, BigEndian};
+use core::cell::RefCell;
 
 use crate::commands::{Command, Reply, SystemParameters};
+
+const REPLY_HEADER_LENGTH: u16 = 9;
 
 /// Represents a R502 device connected to a U(S)ART.
 #[derive(Debug)]
@@ -12,6 +15,7 @@ pub struct R502<TX, RX> {
     rx: RX,
     received: ArrayVec<[u8; 1024]>,
     cmd_buffer: ArrayVec<[u8; 128]>,
+    inflight_request: RefCell<Option<Command>>,
 }
 
 impl<TX, RX> R502<TX, RX>
@@ -24,6 +28,7 @@ where TX: Write<u8>,
             rx: rx,
             received: ArrayVec::<[u8; 1024]>::new(),
             cmd_buffer: ArrayVec::<[u8; 128]>::new(),
+            inflight_request: RefCell::from(None),
         }
     }
 
@@ -34,7 +39,7 @@ where TX: Write<u8>,
     pub fn send_command(&mut self, cmd: Command) -> Result<Reply, ()> {
         self.cmd_buffer.clear();
         self.received.clear();
-        let response_len = self.prepare_cmd(cmd);
+        self.prepare_cmd(cmd);
 
         let cmd_bytes = &self.cmd_buffer[..];
         for byte in cmd_bytes {
@@ -43,21 +48,16 @@ where TX: Write<u8>,
 
         block!(self.tx.flush()).ok();
 
-        for _ in 0..response_len {
-            if let Some(byte) = block!(self.rx.read()).ok() {
-                self.received.push(byte);
-            } else {
-                return Result::Err(());
+        if self.read_reply().is_some() {
+            if let Some(reply) = self.parse_reply() {
+                return Result::Ok(reply);
             }
         }
 
-        if let Some(reply) = self.parse_reply() {
-            return Result::Ok(reply);
-        }
         return Result::Err(());
     }
 
-    fn prepare_cmd(&mut self, cmd: Command) -> usize {
+    fn prepare_cmd(&mut self, cmd: Command) {
         match cmd {
             Command::ReadSysPara { address } => {
                 // Required packet:
@@ -67,16 +67,21 @@ where TX: Write<u8>,
                 // length | 0x00 0x03 [2]
                 // instr  | 0x0F [1]
                 // chksum | checksum [2]
-                self.write_cmd_bytes(&[0xEF, 0x01]);
-                self.write_cmd_bytes(&address.to_be_bytes()[..]);
+                self.write_header(address);
                 self.write_cmd_bytes(&[0x01]);
                 self.write_cmd_bytes(&[0x00, 0x03]);
                 self.write_cmd_bytes(&[0x0F]);
                 let chk = self.compute_checksum();
                 self.write_cmd_bytes(&chk.to_be_bytes()[..]);
-                return 28;
             },
         };
+
+        *self.inflight_request.borrow_mut() = Some(cmd);
+    }
+
+    fn write_header(&mut self, address: u32) {
+        self.write_cmd_bytes(&[0xEF, 0x01]);
+        self.write_cmd_bytes(&address.to_be_bytes()[..]);
     }
 
     fn write_cmd_bytes(&mut self, bytes: &[u8]) {
@@ -93,14 +98,48 @@ where TX: Write<u8>,
         return checksum;
     }
 
+    fn read_reply(&mut self) -> Option<u16> {
+        // At first, we don't know the full packet size, so read in the
+        // first 9 bytes of the packet header.
+        for _ in 0..REPLY_HEADER_LENGTH {
+            if let Some(byte) = block!(self.rx.read()).ok() {
+                self.received.push(byte);
+            } else {
+                return None;
+            }
+        }
+
+        let length = BigEndian::read_u16(&self.received[8..9]);
+        for _ in 0..length {
+            if let Some(byte) = block!(self.rx.read()).ok() {
+                self.received.push(byte);
+            } else {
+                return None;
+            }
+        }
+
+        return Some(REPLY_HEADER_LENGTH + length);
+    }
+
     fn parse_reply(&self) -> Option<Reply> {
         // Packet ID is in byte 6
         if self.received.len() < 7 {
             return None;
         }
 
-        return match self.received[6] {
-            0x07 => {
+        // We have no business reading anything if there's no request in flight
+        let inflight = self.inflight_request.borrow();
+        if inflight.is_none() {
+            return None;
+        }
+
+        // We are looking for a response packet
+        if self.received[6] != 0x07 {
+            return None;
+        }
+
+        return match *inflight {
+            Some(Command::ReadSysPara { address: _ }) => {
                 // Expected packet:
                 // headr  | 0xEF 0x01 [2]
                 // addr   | cmd.address [4]
@@ -216,6 +255,7 @@ mod tests {
         let mut r502 = R502::new(TestTx, TestRx);
         r502.cmd_buffer.clear();
         r502.received.clear();
+        *r502.inflight_request.borrow_mut() = Some(Command::ReadSysPara { address: 0xffffffff });
 
         // and: a reply in the receive buffer
         r502.received.try_extend_from_slice(&[
