@@ -4,7 +4,8 @@ use nb::block;
 use byteorder::{ByteOrder, BigEndian};
 use core::cell::RefCell;
 
-use crate::commands::{Command, Reply, SystemParameters};
+use crate::commands::Command;
+use crate::responses::*;
 
 const REPLY_HEADER_LENGTH: u16 = 9;
 
@@ -74,6 +75,24 @@ where TX: Write<u8>,
                 let chk = self.compute_checksum();
                 self.write_cmd_bytes(&chk.to_be_bytes()[..]);
             },
+
+            Command::VfyPwd { address, password } => {
+                // Required packet:
+                // headr  | 0xEF 0x01 [2]
+                // addr   | cmd.address [4]
+                // ident  | 0x01 [1]
+                // length | 0x00 0x07 [2]
+                // instr  | 0x13 [1]
+                // passwd | cmd.password [4]
+                // chksum | checksum [2]
+                self.write_header(address);
+                self.write_cmd_bytes(&[0x01]);
+                self.write_cmd_bytes(&[0x00, 0x07]);
+                self.write_cmd_bytes(&[0x13]);
+                self.write_cmd_bytes(&password.to_be_bytes()[..]);
+                let chk = self.compute_checksum();
+                self.write_cmd_bytes(&chk.to_be_bytes()[..]);
+            },
         };
 
         *self.inflight_request.borrow_mut() = Some(cmd);
@@ -109,7 +128,7 @@ where TX: Write<u8>,
             }
         }
 
-        let length = BigEndian::read_u16(&self.received[8..9]);
+        let length = BigEndian::read_u16(&self.received[7..9]);
         for _ in 0..length {
             if let Some(byte) = block!(self.rx.read()).ok() {
                 self.received.push(byte);
@@ -148,13 +167,20 @@ where TX: Write<u8>,
                 // confrm | 0x0F [1]
                 // params | (params) [16]
                 // chksum | checksum [2]
-                Some(Reply::ReadSysPara {
+                Some(Reply::ReadSysPara(ReadSysParaResult {
                     address: BigEndian::read_u32(&self.received[2..6]),
                     confirmation_code: self.received[9],
                     checksum: BigEndian::read_u16(&self.received[26..28]),
                     system_parameters: SystemParameters::from_payload(&self.received[10..26])
-                })
+                }))
             },
+            Some(Command::VfyPwd { address: _, password: _ }) => {
+                Some(Reply::VfyPwd(VfyPwdResult {
+                    address: BigEndian::read_u32(&self.received[2..6]),
+                    confirmation_code: PasswordVerificationState::from(self.received[9]),
+                    checksum: BigEndian::read_u16(&self.received[10..12]),
+                }))
+            }
             _ => None,
         };
     }
@@ -298,11 +324,88 @@ mod tests {
         // and: the reply is correct
         let reply = r.unwrap();
         match reply {
-            Reply::ReadSysPara { address, confirmation_code: _, system_parameters, checksum: _ } => {
+            Reply::ReadSysPara(ReadSysParaResult { address, confirmation_code: _, system_parameters, checksum: _ }) => {
                 assert_eq!(address, 0xffffffff);
                 assert_eq!(system_parameters.finger_library_size, 200);
             },
             _ => panic!("Expected Reply::ReadSysPara, got something else!"),
+        };
+    }
+
+    #[test]
+    fn vfy_pwd_serialisation() {
+        // given: a r502 instance
+        let mut r502 = R502::new(TestTx, TestRx);
+        r502.cmd_buffer.clear();
+        r502.received.clear();
+
+        // when: preparing a VfyPwd command
+        r502.prepare_cmd(Command::VfyPwd { address: 0xffffffff, password: 0x00000000 });
+
+        // then: the resulting packet length is ok
+        assert_eq!(r502.cmd_buffer.len(), 16);
+        // and: the packet is correct
+        assert_eq!(&r502.cmd_buffer[..], &[
+            0xef,
+            0x01,
+            0xff,
+            0xff,
+            0xff,
+            0xff,
+            0x01,
+            0x00,
+            0x07,
+            0x13,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x1b,
+        ]);
+    }
+
+    #[test]
+    fn test_vfy_pwd_deserialisation() {
+        // given: a r502 instance
+        let mut r502 = R502::new(TestTx, TestRx);
+        r502.cmd_buffer.clear();
+        r502.received.clear();
+        *r502.inflight_request.borrow_mut() = Some(Command::VfyPwd { address: 0xffffffff, password: 0x00000000 });
+
+        // and: a reply in the receive buffer
+        r502.received.try_extend_from_slice(&[
+            0xef,
+            0x01,
+            0xff,
+            0xff,
+            0xff,
+            0xff,
+            0x07,
+            0x00,
+            0x03,
+            0x00,
+            0x00,
+            0x0a,
+        ]).unwrap();
+
+        // when: parsing a reply
+        let r = r502.parse_reply();
+
+        // then: reply is ok
+        assert_eq!(r.is_some(), true);
+
+        // and: the reply is correct
+        let reply = r.unwrap();
+        match reply {
+            Reply::VfyPwd(VfyPwdResult { address, confirmation_code, checksum: _ }) => {
+                assert_eq!(address, 0xffffffff);
+                match confirmation_code {
+                    PasswordVerificationState::Correct => (),
+                    _ => panic!("Expected PasswordConfirmationCode::Correct"),
+                };
+            },
+            _ => panic!("Expected Reply::VfyPwd, got something else!"),
         };
     }
 }
