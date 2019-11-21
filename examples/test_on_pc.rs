@@ -33,10 +33,27 @@ fn run_test(port_name: &str) {
     let writer = SerialWriter(&port_cell);
     let mut r502 = R502::new(writer, reader);
 
-    let check: u16 = 0x01u16 + 0x0003u16 + 0x0fu16;
-    println!("expected checksum: {:04x}", check);
+    println!("1. Checking status");
 
-    let cmd = Command::ReadSysPara { address: 0xffffffffu32 };
+    let cmd = Command::ReadSysPara { address: 0xffffffff };
+    println!("Command: {:#?}", cmd);
+    match r502.send_command(cmd) {
+        Ok(reply) => println!("Reply: {:#?}", reply),
+        Err(e) => println!("Error: {:#?}", e),
+    };
+
+    println!("2. Verifying password");
+
+    let cmd = Command::VfyPwd { address: 0xffffffff, password: 0x00000000 };
+    println!("Command: {:#?}", cmd);
+    match r502.send_command(cmd) {
+        Ok(reply) => println!("Reply: {:#?}", reply),
+        Err(e) => println!("Error: {:#?}", e),
+    };
+
+    println!("3. Checking status again - password should be ok");
+
+    let cmd = Command::ReadSysPara { address: 0xffffffff };
     println!("Command: {:#?}", cmd);
     match r502.send_command(cmd) {
         Ok(reply) => println!("Reply: {:#?}", reply),
