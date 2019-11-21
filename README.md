@@ -5,9 +5,10 @@ R502 command set but rather enough for a simple fingerprint verification device.
 
 ## Progress
 
-- [ ] **VerifyPassword** Performs a handshake with the device
+- [x] **VerifyPassword** Performs a handshake with the device
 - [x] **ReadSysPara** Reads system status information
-- [ ] ...
+
+For more, see the [projects](https://github.com/FLamparski/hzgrow-r502/projects).
 
 ## Examples
 
