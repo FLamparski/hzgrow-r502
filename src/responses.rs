@@ -7,8 +7,10 @@ pub enum Reply {
     /// Contains system status and configuration information
     ReadSysPara(ReadSysParaResult),
 
+    /// Contains result of password verification
     VfyPwd(VfyPwdResult),
 
+    /// Contains result of acquiring an image
     GenImg(GenImgResult),
 }
 
@@ -62,6 +64,7 @@ for VfyPwdResult {
 #[derive(Debug)]
 pub struct GenImgResult {
     pub address: u32,
+    /// Fingerprint capture result
     pub confirmation_code: GenImgStatus,
     pub checksum: u16,
 }
@@ -183,9 +186,16 @@ impl PasswordVerificationState {
 
 #[derive(Debug)]
 pub enum GenImgStatus {
+    /// Fingerprint has been captured successfully
     Success,
+
+    /// Error reading packet from the host
     PacketError,
+
+    /// Finger not detected
     FingerNotDetected,
+
+    /// Image failed to capture
     ImageNotCaptured,
 }
 

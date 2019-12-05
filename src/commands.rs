@@ -15,6 +15,7 @@ pub enum Command {
         password: u32,
     },
 
+    /// Captures an image of the fingerprint
     GenImg,
 }
 
