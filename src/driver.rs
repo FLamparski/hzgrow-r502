@@ -6,12 +6,14 @@ use core::cell::RefCell;
 
 use crate::commands::Command;
 use crate::responses::*;
+use crate::utils::{FromPayload, CommandWriter, ToPayload};
 
 const REPLY_HEADER_LENGTH: u16 = 9;
 
 /// Represents a R502 device connected to a U(S)ART.
 #[derive(Debug)]
 pub struct R502<TX, RX> {
+    address: u32,
     tx: TX,
     rx: RX,
     received: ArrayVec<[u8; 1024]>,
@@ -19,12 +21,20 @@ pub struct R502<TX, RX> {
     inflight_request: RefCell<Option<Command>>,
 }
 
+impl<TX, RX> CommandWriter
+for R502<TX, RX> {
+    fn write_cmd_bytes(&mut self, bytes: &[u8]) {
+        self.cmd_buffer.try_extend_from_slice(bytes).unwrap();
+    }
+}
+
 impl<TX, RX> R502<TX, RX>
 where TX: Write<u8>,
       RX: Read<u8>
 {
-    pub fn new(tx: TX, rx: RX) -> Self {
+    pub fn new(tx: TX, rx: RX, address: u32) -> Self {
         Self {
+            address: address,
             tx: tx,
             rx: rx,
             received: ArrayVec::<[u8; 1024]>::new(),
@@ -59,41 +69,10 @@ where TX: Write<u8>,
     }
 
     fn prepare_cmd(&mut self, cmd: Command) {
-        match cmd {
-            Command::ReadSysPara { address } => {
-                // Required packet:
-                // headr  | 0xEF 0x01 [2]
-                // addr   | cmd.address [4]
-                // ident  | 0x01 [1]
-                // length | 0x00 0x03 [2]
-                // instr  | 0x0F [1]
-                // chksum | checksum [2]
-                self.write_header(address);
-                self.write_cmd_bytes(&[0x01]);
-                self.write_cmd_bytes(&[0x00, 0x03]);
-                self.write_cmd_bytes(&[0x0F]);
-                let chk = self.compute_checksum();
-                self.write_cmd_bytes(&chk.to_be_bytes()[..]);
-            },
-
-            Command::VfyPwd { address, password } => {
-                // Required packet:
-                // headr  | 0xEF 0x01 [2]
-                // addr   | cmd.address [4]
-                // ident  | 0x01 [1]
-                // length | 0x00 0x07 [2]
-                // instr  | 0x13 [1]
-                // passwd | cmd.password [4]
-                // chksum | checksum [2]
-                self.write_header(address);
-                self.write_cmd_bytes(&[0x01]);
-                self.write_cmd_bytes(&[0x00, 0x07]);
-                self.write_cmd_bytes(&[0x13]);
-                self.write_cmd_bytes(&password.to_be_bytes()[..]);
-                let chk = self.compute_checksum();
-                self.write_cmd_bytes(&chk.to_be_bytes()[..]);
-            },
-        };
+        self.write_header(self.address);
+        cmd.to_payload(self);
+        let chk = self.compute_checksum();
+        self.write_cmd_bytes(&chk.to_be_bytes()[..]);
 
         *self.inflight_request.borrow_mut() = Some(cmd);
     }
@@ -101,10 +80,6 @@ where TX: Write<u8>,
     fn write_header(&mut self, address: u32) {
         self.write_cmd_bytes(&[0xEF, 0x01]);
         self.write_cmd_bytes(&address.to_be_bytes()[..]);
-    }
-
-    fn write_cmd_bytes(&mut self, bytes: &[u8]) {
-        self.cmd_buffer.try_extend_from_slice(bytes).unwrap();
     }
 
     fn compute_checksum(&self) -> u16 {
@@ -158,53 +133,17 @@ where TX: Write<u8>,
         }
 
         return match *inflight {
-            Some(Command::ReadSysPara { address: _ }) => {
-                // Expected packet:
-                // headr  | 0xEF 0x01 [2]
-                // addr   | cmd.address [4]
-                // ident  | 0x01 [1]
-                // length | 0x00 0x03 [2] == 19 (3 + 16)
-                // confrm | 0x0F [1]
-                // params | (params) [16]
-                // chksum | checksum [2]
-                Some(Reply::ReadSysPara(ReadSysParaResult {
-                    address: BigEndian::read_u32(&self.received[2..6]),
-                    confirmation_code: self.received[9],
-                    checksum: BigEndian::read_u16(&self.received[26..28]),
-                    system_parameters: SystemParameters::from_payload(&self.received[10..26])
-                }))
+            Some(Command::ReadSysPara) => {
+                Some(Reply::ReadSysPara(ReadSysParaResult::from_payload(&self.received[..])))
             },
-            Some(Command::VfyPwd { address: _, password: _ }) => {
-                Some(Reply::VfyPwd(VfyPwdResult {
-                    address: BigEndian::read_u32(&self.received[2..6]),
-                    confirmation_code: PasswordVerificationState::from(self.received[9]),
-                    checksum: BigEndian::read_u16(&self.received[10..12]),
-                }))
+            Some(Command::VfyPwd { password: _ }) => {
+                Some(Reply::VfyPwd(VfyPwdResult::from_payload(&self.received[..])))
+            },
+            Some(Command::GenImg) => {
+                Some(Reply::GenImg(GenImgResult::from_payload(&self.received[..])))
             }
             _ => None,
         };
-    }
-}
-
-trait FromPayload<T> {
-    fn from_payload(payload: &[u8]) -> T;
-}
-
-impl FromPayload<SystemParameters>
-for SystemParameters {
-    fn from_payload(payload: &[u8]) -> SystemParameters {
-        // HZ R502's datasheet is a little inconsistent - sometimes the sizes are given in bytes
-        // and sometimes in words; words are 16 bit (2 byte).
-        // Pick a flipping unit and stick with it!
-        SystemParameters {
-            status_register: BigEndian::read_u16(&payload[0..2]),
-            system_identifier_code: BigEndian::read_u16(&payload[2..4]),
-            finger_library_size: BigEndian::read_u16(&payload[4..6]),
-            security_level: BigEndian::read_u16(&payload[6..8]),
-            device_address: BigEndian::read_u32(&payload[8..12]),
-            packet_size: BigEndian::read_u16(&payload[12..14]),
-            baud_setting: BigEndian::read_u16(&payload[12..16]),
-        }
     }
 }
 
@@ -235,7 +174,7 @@ mod tests {
     #[test]
     fn checksum_tests() {
         // given: a r502 instance
-        let mut r502 = R502::new(TestTx, TestRx);
+        let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
         r502.cmd_buffer.clear();
 
         // and: some data to compute a checksum of
@@ -249,12 +188,12 @@ mod tests {
     #[test]
     fn test_read_sys_para_serialisation() {
         // given: a r502 instance
-        let mut r502 = R502::new(TestTx, TestRx);
+        let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
         r502.cmd_buffer.clear();
         r502.received.clear();
 
         // when: preparing a ReadSysPara command
-        r502.prepare_cmd(Command::ReadSysPara { address: 0xffffffff });
+        r502.prepare_cmd(Command::ReadSysPara);
 
         // then: the resulting packet length is correct
         assert_eq!(r502.cmd_buffer.len(), 12);
@@ -278,10 +217,10 @@ mod tests {
     #[test]
     fn test_read_sys_para_deserialisation() {
         // given: a r502 instance
-        let mut r502 = R502::new(TestTx, TestRx);
+        let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
         r502.cmd_buffer.clear();
         r502.received.clear();
-        *r502.inflight_request.borrow_mut() = Some(Command::ReadSysPara { address: 0xffffffff });
+        *r502.inflight_request.borrow_mut() = Some(Command::ReadSysPara);
 
         // and: a reply in the receive buffer
         r502.received.try_extend_from_slice(&[
@@ -335,12 +274,12 @@ mod tests {
     #[test]
     fn vfy_pwd_serialisation() {
         // given: a r502 instance
-        let mut r502 = R502::new(TestTx, TestRx);
+        let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
         r502.cmd_buffer.clear();
         r502.received.clear();
 
         // when: preparing a VfyPwd command
-        r502.prepare_cmd(Command::VfyPwd { address: 0xffffffff, password: 0x00000000 });
+        r502.prepare_cmd(Command::VfyPwd { password: 0x00000000 });
 
         // then: the resulting packet length is ok
         assert_eq!(r502.cmd_buffer.len(), 16);
@@ -368,10 +307,10 @@ mod tests {
     #[test]
     fn test_vfy_pwd_deserialisation() {
         // given: a r502 instance
-        let mut r502 = R502::new(TestTx, TestRx);
+        let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
         r502.cmd_buffer.clear();
         r502.received.clear();
-        *r502.inflight_request.borrow_mut() = Some(Command::VfyPwd { address: 0xffffffff, password: 0x00000000 });
+        *r502.inflight_request.borrow_mut() = Some(Command::VfyPwd { password: 0x00000000 });
 
         // and: a reply in the receive buffer
         r502.received.try_extend_from_slice(&[
@@ -406,6 +345,79 @@ mod tests {
                 };
             },
             _ => panic!("Expected Reply::VfyPwd, got something else!"),
+        };
+    }
+
+    #[test]
+    fn gen_img_serialisation() {
+        // given: a r502 instance
+        let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
+        r502.cmd_buffer.clear();
+        r502.received.clear();
+        
+        // when: preparing a GenImg command
+        r502.prepare_cmd(Command::GenImg);
+
+        // then: the resulting packet length is correct
+        assert_eq!(r502.cmd_buffer.len(), 12);
+        // and: the packet is correct
+        assert_eq!(&r502.cmd_buffer[..], &[
+            0xef,
+            0x01,
+            0xff,
+            0xff,
+            0xff,
+            0xff,
+            0x01,
+            0x00,
+            0x03,
+            0x01,
+            0x00,
+            0x05,
+        ]);
+    }
+
+    #[test]
+    fn test_gen_img_deserialisation() {
+        // given: a r502 instance
+        let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
+        r502.cmd_buffer.clear();
+        r502.received.clear();
+        *r502.inflight_request.borrow_mut() = Some(Command::GenImg);
+
+        // and: a reply in the receive buffer
+        r502.received.try_extend_from_slice(&[
+            0xef,
+            0x01,
+            0xff,
+            0xff,
+            0xff,
+            0xff,
+            0x07,
+            0x00,
+            0x03,
+            0x00,
+            0x00,
+            0x0a,
+        ]).unwrap();
+
+        // when: parsing a reply
+        let r = r502.parse_reply();
+
+        // then: reply is ok
+        assert_eq!(r.is_some(), true);
+        
+        // and: the reply is correct
+        let reply = r.unwrap();
+        match reply {
+            Reply::GenImg(GenImgResult { address, confirmation_code, checksum: _ }) => {
+                assert_eq!(address, 0xffffffff);
+                match confirmation_code {
+                    GenImgStatus::Success => (),
+                    _ => panic!("Expected PasswordConfirmationCode::Success"),
+                };
+            },
+            _ => panic!("Expected Reply::GenImg, got something else!"),
         };
     }
 }

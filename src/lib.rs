@@ -4,6 +4,7 @@
 mod driver;
 mod commands;
 mod responses;
+mod utils;
 
 pub use crate::driver::R502;
 pub use crate::commands::{
@@ -15,4 +16,6 @@ pub use crate::responses::{
     VfyPwdResult,
     SystemParameters,
     PasswordVerificationState,
+    GenImgResult,
+    GenImgStatus,
 };
