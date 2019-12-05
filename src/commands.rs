@@ -21,4 +21,8 @@ pub enum Command {
         /// The device password.
         password: u32,
     },
+
+    GenImg {
+        address: u32,
+    },
 }

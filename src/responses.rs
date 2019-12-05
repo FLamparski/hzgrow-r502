@@ -5,6 +5,8 @@ pub enum Reply {
     ReadSysPara(ReadSysParaResult),
 
     VfyPwd(VfyPwdResult),
+
+    GenImg(GenImgResult),
 }
 
 #[derive(Debug)]
@@ -20,6 +22,13 @@ pub struct VfyPwdResult {
     pub address: u32,
     /// Handshake result
     pub confirmation_code: PasswordVerificationState,
+    pub checksum: u16,
+}
+
+#[derive(Debug)]
+pub struct GenImgResult {
+    pub address: u32,
+    pub confirmation_code: GenImgStatus,
     pub checksum: u16,
 }
 
@@ -105,6 +114,26 @@ impl PasswordVerificationState {
             0x13 => Self::Incorrect,
             0x01 => Self::Error,
             _ => panic!("Invalid VfyPwdResult: {:02x}", byte),
+        };
+    }
+}
+
+#[derive(Debug)]
+pub enum GenImgStatus {
+    Success,
+    PacketError,
+    FingerNotDetected,
+    ImageNotCaptured,
+}
+
+impl GenImgStatus {
+    pub fn from(byte: u8) -> Self {
+        return match byte {
+            0x00 => Self::Success,
+            0x01 => Self::PacketError,
+            0x02 => Self::FingerNotDetected,
+            0x03 => Self::ImageNotCaptured,
+            _ => panic!("Invalid GenImgStatus: {:02x}", byte),
         };
     }
 }

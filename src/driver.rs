@@ -93,6 +93,22 @@ where TX: Write<u8>,
                 let chk = self.compute_checksum();
                 self.write_cmd_bytes(&chk.to_be_bytes()[..]);
             },
+
+            Command::GenImg { address } => {
+                // Required packet:
+                // headr  | 0xEF 0x01 [2]
+                // addr   | cmd.address [4]
+                // ident  | 0x01 [1]
+                // length | 0x00 0x01 [2]
+                // instr  | 0x0F [1]
+                // chksum | checksum [2]
+                self.write_header(address);
+                self.write_cmd_bytes(&[0x01]);
+                self.write_cmd_bytes(&[0x00, 0x03]);
+                self.write_cmd_bytes(&[0x01]);
+                let chk = self.compute_checksum();
+                self.write_cmd_bytes(&chk.to_be_bytes()[..]);
+            }
         };
 
         *self.inflight_request.borrow_mut() = Some(cmd);
@@ -180,17 +196,24 @@ where TX: Write<u8>,
                     confirmation_code: PasswordVerificationState::from(self.received[9]),
                     checksum: BigEndian::read_u16(&self.received[10..12]),
                 }))
+            },
+            Some(Command::GenImg { address: _ }) => {
+                Some(Reply::GenImg(GenImgResult {
+                    address: BigEndian::read_u32(&self.received[2..6]),
+                    confirmation_code: GenImgStatus::from(self.received[9]),
+                    checksum: BigEndian::read_u16(&self.received[10..12]),
+                }))
             }
             _ => None,
         };
     }
 }
 
-trait FromPayload<T> {
-    fn from_payload(payload: &[u8]) -> T;
+trait FromPayload {
+    fn from_payload(payload: &[u8]) -> Self;
 }
 
-impl FromPayload<SystemParameters>
+impl FromPayload
 for SystemParameters {
     fn from_payload(payload: &[u8]) -> SystemParameters {
         // HZ R502's datasheet is a little inconsistent - sometimes the sizes are given in bytes
