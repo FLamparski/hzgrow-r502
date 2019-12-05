@@ -1,7 +1,9 @@
 use std::{env, cell::RefCell, time::Duration};
-use serialport::{prelude::*, available_ports, open};
-use embedded_hal::{serial::{Read, Write}};
+use serialport::{available_ports, open};
 use hzgrow_r502::{R502, Command};
+
+mod pc_utils;
+use pc_utils::{SerialReader, SerialWriter};
 
 const DEFAULT_BAUD_RATE: u32 = 57600;
 
@@ -61,55 +63,3 @@ fn run_test(port_name: &str) {
     };
 }
 
-// We're cheating here and will use the host OS's serial port
-// as our UART, and for that we have to implement the read/write
-// interfaces from embedded-hal.
-
-struct SerialReader<'a>(&'a RefCell<Box<dyn SerialPort>>);
-struct SerialWriter<'a>(&'a RefCell<Box<dyn SerialPort>>);
-
-impl Read<u8> for SerialReader<'_> {
-    type Error = std::io::Error;
-    
-    fn read(&mut self) -> nb::Result<u8, Self::Error> {
-        let mut buf: [u8; 1] = [0u8];
-        loop {
-            match self.0.borrow_mut().read(&mut buf) {
-                Ok(n) => if n == 1 {
-                    println!("read: {:02x}", buf[0]);
-                    return Ok(buf[0]);
-                },
-                Err(e) => {
-                    println!("Error: {:#?}", e);
-                    return Err(nb::Error::from(e));
-                },
-            };
-        }
-    }
-}
-
-impl Write<u8> for SerialWriter<'_> {
-    type Error = std::io::Error;
-
-    fn write(&mut self, word: u8) -> nb::Result<(), Self::Error> {
-        let buf: [u8; 1] = [word];
-        loop {
-            match self.0.borrow_mut().write(&buf) {
-                Ok(n) => if n == 1 {
-                    println!("write: {:02x}", word);
-                    return Ok(());
-                },
-                Err(e) => {
-                    return Err(nb::Error::from(e));
-                }
-            }
-        }
-    }
-
-    fn flush(&mut self) -> nb::Result<(), Self::Error> {
-        return match self.0.borrow_mut().flush() {
-            Ok(_) => Ok(()),
-            Err(e) => Err(nb::Error::from(e)),
-        };
-    }
-}
