@@ -11,7 +11,7 @@ pub struct SerialWriter<'a>(pub &'a RefCell<Box<dyn SerialPort>>);
 
 impl Read<u8> for SerialReader<'_> {
     type Error = std::io::Error;
-    
+
     fn read(&mut self) -> nb::Result<u8, Self::Error> {
         let mut buf: [u8; 1] = [0u8];
         loop {
@@ -55,4 +55,7 @@ impl Write<u8> for SerialWriter<'_> {
     }
 }
 
+#[allow(dead_code)]
+// This allows us to share code between different PC-based examples.
+// There's probably a better way to do it!
 fn main() {}

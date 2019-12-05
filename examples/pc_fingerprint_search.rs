@@ -1,6 +1,6 @@
 use std::{env, cell::RefCell, time::Duration};
 use serialport::{available_ports, open};
-use hzgrow_r502::{R502, Command, Reply, GenImgResult, GenImgStatus};
+use hzgrow_r502::{R502, Command, Reply, GenImgStatus};
 
 mod pc_utils;
 use pc_utils::{SerialReader, SerialWriter};
