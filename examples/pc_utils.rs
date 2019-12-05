@@ -17,7 +17,7 @@ impl Read<u8> for SerialReader<'_> {
         loop {
             match self.0.borrow_mut().read(&mut buf) {
                 Ok(n) => if n == 1 {
-                    println!("read: {:02x}", buf[0]);
+                    //println!("read: {:02x}", buf[0]);
                     return Ok(buf[0]);
                 },
                 Err(e) => {
@@ -37,7 +37,7 @@ impl Write<u8> for SerialWriter<'_> {
         loop {
             match self.0.borrow_mut().write(&buf) {
                 Ok(n) => if n == 1 {
-                    println!("write: {:02x}", word);
+                    //println!("write: {:02x}", word);
                     return Ok(());
                 },
                 Err(e) => {
@@ -54,3 +54,5 @@ impl Write<u8> for SerialWriter<'_> {
         };
     }
 }
+
+fn main() {}

@@ -1,3 +1,6 @@
+use crate::utils::FromPayload;
+use byteorder::{ByteOrder, BigEndian};
+
 /// Responses to commands returned by the R502. Names are the same as commands.
 #[derive(Debug)]
 pub enum Reply {
@@ -17,6 +20,26 @@ pub struct ReadSysParaResult {
     pub checksum: u16,
 }
 
+impl FromPayload
+for ReadSysParaResult {
+    // Expected packet:
+    // headr  | 0xEF 0x01 [2]
+    // addr   | cmd.address [4]
+    // ident  | 0x01 [1]
+    // length | 0x00 0x03 [2] == 19 (3 + 16)
+    // confrm | 0x0F [1]
+    // params | (params) [16]
+    // chksum | checksum [2]
+    fn from_payload(payload: &[u8]) -> Self {
+        return Self {
+            address: BigEndian::read_u32(&payload[2..6]),
+            confirmation_code: payload[9],
+            checksum: BigEndian::read_u16(&payload[26..28]),
+            system_parameters: SystemParameters::from_payload(&payload[10..26]),
+        };
+    }
+}
+
 #[derive(Debug)]
 pub struct VfyPwdResult {
     pub address: u32,
@@ -25,11 +48,33 @@ pub struct VfyPwdResult {
     pub checksum: u16,
 }
 
+impl FromPayload
+for VfyPwdResult {
+    fn from_payload(payload: &[u8]) -> Self {
+        return Self {
+            address: BigEndian::read_u32(&payload[2..6]),
+            confirmation_code: PasswordVerificationState::from(payload[9]),
+            checksum: BigEndian::read_u16(&payload[10..12]),
+        };
+    }
+}
+
 #[derive(Debug)]
 pub struct GenImgResult {
     pub address: u32,
     pub confirmation_code: GenImgStatus,
     pub checksum: u16,
+}
+
+impl FromPayload
+for GenImgResult {
+    fn from_payload(payload: &[u8]) -> Self {
+        return Self {
+            address: BigEndian::read_u32(&payload[2..6]),
+            confirmation_code: GenImgStatus::from(payload[9]),
+            checksum: BigEndian::read_u16(&payload[10..12]),
+        };
+    }
 }
 
 /// System status and configuration.
@@ -96,6 +141,24 @@ impl SystemParameters {
     /// *ImgBufStat* in the datasheet.
     pub fn has_valid_image(self) -> bool {
         return self.status_register & (1u16 << 3) != 0;
+    }
+}
+
+impl FromPayload
+for SystemParameters {
+    fn from_payload(payload: &[u8]) -> SystemParameters {
+        // HZ R502's datasheet is a little inconsistent - sometimes the sizes are given in bytes
+        // and sometimes in words; words are 16 bit (2 byte).
+        // Pick a flipping unit and stick with it!
+        SystemParameters {
+            status_register: BigEndian::read_u16(&payload[0..2]),
+            system_identifier_code: BigEndian::read_u16(&payload[2..4]),
+            finger_library_size: BigEndian::read_u16(&payload[4..6]),
+            security_level: BigEndian::read_u16(&payload[6..8]),
+            device_address: BigEndian::read_u32(&payload[8..12]),
+            packet_size: BigEndian::read_u16(&payload[12..14]),
+            baud_setting: BigEndian::read_u16(&payload[12..16]),
+        }
     }
 }
 

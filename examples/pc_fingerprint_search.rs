@@ -1,6 +1,6 @@
 use std::{env, cell::RefCell, time::Duration};
 use serialport::{available_ports, open};
-use hzgrow_r502::{R502, Command, Reply};
+use hzgrow_r502::{R502, Command, Reply, GenImgResult, GenImgStatus};
 
 mod pc_utils;
 use pc_utils::{SerialReader, SerialWriter};
@@ -34,11 +34,11 @@ fn run_test(port_name: &str) {
 
     let reader = SerialReader(&port_cell);
     let writer = SerialWriter(&port_cell);
-    let mut r502 = R502::new(writer, reader);
+    let mut r502 = R502::new(writer, reader, 0xffffffff);
 
     println!("1. Verifying password");
 
-    let cmd = Command::VfyPwd { address: 0xffffffff, password: 0x00000000 };
+    let cmd = Command::VfyPwd { password: 0x00000000 };
     println!("Command: {:#?}", cmd);
     match r502.send_command(cmd) {
         Ok(Reply::VfyPwd(result)) => println!("Reply: {:#?}", result.confirmation_code),
@@ -48,20 +48,37 @@ fn run_test(port_name: &str) {
 
     println!("2. Checking status - password should be ok");
 
-    let cmd = Command::ReadSysPara { address: 0xffffffff };
-    println!("Command: {:#?}", cmd);
-    match r502.send_command(cmd) {
+    println!("Command: {:#?}", Command::ReadSysPara);
+    match r502.send_command(Command::ReadSysPara) {
         Ok(Reply::ReadSysPara(result)) => println!("Password result: {:#?}", result.system_parameters.password_ok()),
         Err(e) => println!("Error: {:#?}", e),
         msg => panic!("Unexpected msg: {:#?}", msg),
     };
 
     println!("3. Acquiring image");
+    print!("Command: {:#?}", Command::GenImg);
+    loop {
+        match r502.send_command(Command::GenImg) {
+            Ok(Reply::GenImg(result)) => {
+                match result.confirmation_code {
+                    GenImgStatus::Success => break,
+                    GenImgStatus::FingerNotDetected => print!("."),
+                    GenImgStatus::ImageNotCaptured => print!("!"),
+                    _ => {},
+                }
+            },
+            Err(e) => println!("Error: {:#?}", e),
+            msg => panic!("Unexpected msg: {:#?}", msg),
+        };
+    }
+    println!();
 
-    let cmd = Command::GenImg { address: 0xffffffff };
-    println!("Command: {:#?}", cmd);
-    match r502.send_command(cmd) {
-        Ok(reply) => println!("Reply: {:#?}", reply),
+    println!("4. Checking status - image should be ok");
+
+    println!("Command: {:#?}", Command::ReadSysPara);
+    match r502.send_command(Command::ReadSysPara) {
+        Ok(Reply::ReadSysPara(result)) => println!("Valid image: {:#?}", result.system_parameters.has_valid_image()),
         Err(e) => println!("Error: {:#?}", e),
+        msg => panic!("Unexpected msg: {:#?}", msg),
     };
 }
