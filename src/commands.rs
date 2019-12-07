@@ -17,6 +17,14 @@ pub enum Command {
 
     /// Captures an image of the fingerprint
     GenImg,
+
+    /// Processes an image into a _character buffer_
+    Img2Tz {
+        /// Which buffer to store the processed fingerprint data into (there are 2).
+        /// 
+        /// **Note:** The buffers are named **1** and **2**. Any other value defaults to 2.
+        buffer: u8,
+    },
 }
 
 impl ToPayload
@@ -62,6 +70,13 @@ for Command {
                 writer.write_cmd_bytes(&[0x01]);
                 writer.write_cmd_bytes(&[0x00, 0x03]);
                 writer.write_cmd_bytes(&[0x01]);
+            }
+
+            Self::Img2Tz { buffer } => {
+                writer.write_cmd_bytes(&[0x01]);
+                writer.write_cmd_bytes(&[0x00, 0x04]);
+                writer.write_cmd_bytes(&[0x02]);
+                writer.write_cmd_bytes(&[*buffer]);
             }
         }
     }

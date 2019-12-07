@@ -81,4 +81,14 @@ fn run_test(port_name: &str) {
         Err(e) => println!("Error: {:#?}", e),
         msg => panic!("Unexpected msg: {:#?}", msg),
     };
+
+    println!("5. Process the image into a \"character buffer\"");
+
+    let cmd = Command::Img2Tz { buffer: 1 };
+    println!("Command: {:#?}", cmd);
+    match r502.send_command(cmd) {
+        Ok(Reply::Img2Tz(result)) => println!("Reply: {:#?}", result),
+        Err(e) => println!("Error: {:#?}", e),
+        msg => panic!("Unexpected msg: {:#?}", msg),
+    };
 }
