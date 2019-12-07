@@ -24,7 +24,9 @@ pub enum Reply {
 #[derive(Debug)]
 pub struct ReadSysParaResult {
     pub address: u32,
+    /// Status code
     pub confirmation_code: u8,
+    /// System parameters
     pub system_parameters: SystemParameters,
     pub checksum: u16,
 }

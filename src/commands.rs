@@ -77,8 +77,8 @@ for Command {
             // headr  | 0xEF 0x01 [2]
             // addr   | cmd.address [4]
             // ident  | 0x01 [1]
-            // length | 0x00 0x01 [2]
-            // instr  | 0x0F [1]
+            // length | 0x00 0x03 [2]
+            // instr  | 0x01 [1]
             // chksum | checksum [2]
             Self::GenImg => {
                 writer.write_cmd_bytes(&[0x01]);
@@ -86,6 +86,14 @@ for Command {
                 writer.write_cmd_bytes(&[0x01]);
             }
 
+            // Required packet:
+            // headr  | 0xEF 0x01 [2]
+            // addr   | cmd.address [4]
+            // ident  | 0x01 [1]
+            // length | 0x00 0x04 [2]
+            // instr  | 0x02 [1]
+            // bufid  | buffer [1]
+            // chksum | checksum [2]
             Self::Img2Tz { buffer } => {
                 writer.write_cmd_bytes(&[0x01]);
                 writer.write_cmd_bytes(&[0x00, 0x04]);
