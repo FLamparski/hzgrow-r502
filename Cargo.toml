@@ -2,6 +2,8 @@
 name = "hzgrow-r502"
 version = "0.1.0"
 authors = ["Filip Wieland <filiplamparski@gmail.com>"]
+homepage = "https://github.com/FLamparski/hzgrow-r502"
+repository = "https://github.com/FLamparski/hzgrow-r502"
 edition = "2018"
 description = "A USART driver for the HZ Grow R502 fingerprint reader module. May also be useful for other, similar modules."
 keywords = ["embedded-hal-driver", "usart", "serial", "fingerprint", "biometrics"]
@@ -9,7 +11,8 @@ categories = ["embedded"]
 readme = "README.md"
 license = "MIT"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[badges]
+maintenance = { status = "experimental" }
 
 [dependencies]
 nb = "0.1.2"
