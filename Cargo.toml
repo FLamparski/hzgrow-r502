@@ -1,6 +1,6 @@
 [package]
 name = "hzgrow-r502"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Filip Wieland <filiplamparski@gmail.com>"]
 homepage = "https://github.com/FLamparski/hzgrow-r502"
 repository = "https://github.com/FLamparski/hzgrow-r502"
@@ -10,6 +10,10 @@ keywords = ["embedded-hal-driver", "usart", "serial", "fingerprint", "biometrics
 categories = ["embedded"]
 readme = "README.md"
 license = "MIT"
+exclude = [
+    "_packet capture/*",
+    ".github/*"
+]
 
 [badges]
 maintenance = { status = "experimental" }
