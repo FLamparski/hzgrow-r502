@@ -42,7 +42,7 @@ fn run_test(port_name: &str) {
     println!("Command: {:#?}", cmd);
     match r502.send_command(cmd) {
         Ok(Reply::VfyPwd(result)) => println!("Reply: {:#?}", result.confirmation_code),
-        Err(e) => println!("Error: {:#?}", e),
+        Err(e) => panic!("Error: {:#?}", e),
         msg => panic!("Unexpected msg: {:#?}", msg),
     };
 
@@ -51,7 +51,7 @@ fn run_test(port_name: &str) {
     println!("Command: {:#?}", Command::ReadSysPara);
     match r502.send_command(Command::ReadSysPara) {
         Ok(Reply::ReadSysPara(result)) => println!("Password result: {:#?}", result.system_parameters.password_ok()),
-        Err(e) => println!("Error: {:#?}", e),
+        Err(e) => panic!("Error: {:#?}", e),
         msg => panic!("Unexpected msg: {:#?}", msg),
     };
 
@@ -67,7 +67,7 @@ fn run_test(port_name: &str) {
                     _ => {},
                 }
             },
-            Err(e) => println!("Error: {:#?}", e),
+            Err(e) => panic!("Error: {:#?}", e),
             msg => panic!("Unexpected msg: {:#?}", msg),
         };
     }
@@ -78,7 +78,7 @@ fn run_test(port_name: &str) {
     println!("Command: {:#?}", Command::ReadSysPara);
     match r502.send_command(Command::ReadSysPara) {
         Ok(Reply::ReadSysPara(result)) => println!("Valid image: {:#?}", result.system_parameters.has_valid_image()),
-        Err(e) => println!("Error: {:#?}", e),
+        Err(e) => panic!("Error: {:#?}", e),
         msg => panic!("Unexpected msg: {:#?}", msg),
     };
 
@@ -88,7 +88,7 @@ fn run_test(port_name: &str) {
     println!("Command: {:#?}", cmd);
     match r502.send_command(cmd) {
         Ok(Reply::Img2Tz(result)) => println!("Reply: {:#?}", result),
-        Err(e) => println!("Error: {:#?}", e),
+        Err(e) => panic!("Error: {:#?}", e),
         msg => panic!("Unexpected msg: {:#?}", msg),
     };
 }
