@@ -500,4 +500,88 @@ mod tests {
             _ => panic!("Expected Reply::Img2Tz, got something else!"),
         };
     }
+
+    #[test]
+    fn test_search_serialisation() {
+        // given: a r502 instance
+        let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
+        r502.cmd_buffer.clear();
+        r502.received.clear();
+        
+        // when: preparing a GenImg command
+        r502.prepare_cmd(Command::Search { buffer: 1, start_index: 0, end_index: 0xffff });
+
+        // then: the resulting packet length is correct
+        assert_eq!(r502.cmd_buffer.len(), 17);
+        // and: the packet is correct
+        assert_eq!(&r502.cmd_buffer[..], &[
+            0xef,
+            0x01,
+            0xff,
+            0xff,
+            0xff,
+            0xff,
+            0x01,
+            0x00,
+            0x08,
+            0x04,
+            0x01,
+            0x00,
+            0x00,
+            0xff,
+            0xff,
+            0x02,
+            0x0c,
+        ]);
+    }
+
+    #[test]
+    fn test_search_deserialisation() {
+        // given: a r502 instance
+        let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
+        r502.cmd_buffer.clear();
+        r502.received.clear();
+        *r502.inflight_request.borrow_mut() = Some(Command::Search { buffer: 1, start_index: 0, end_index: 0xffff });
+
+        // and: a reply in the receive buffer
+        r502.received.try_extend_from_slice(&[
+            0xef,
+            0x01,
+            0xff,
+            0xff,
+            0xff,
+            0xff,
+            0x07,
+            0x00,
+            0x07,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0xff,
+            0x00,
+            0x4a,
+        ]).unwrap();
+
+        // when: parsing a reply
+        let r = r502.parse_reply();
+
+        // then: reply is ok
+        assert_eq!(r.is_some(), true);
+
+        // and: the reply is correct
+        let reply = r.unwrap();
+        match reply {
+            Reply::Search(SearchResult { address, confirmation_code, match_id, match_score, checksum: _ }) => {
+                assert_eq!(address, 0xffffffff);
+                match confirmation_code {
+                    SearchStatus::Success => (),
+                    _ => panic!("Expected SearchStatus::Success"),
+                };
+                assert_eq!(match_id, 0);
+                assert_eq!(match_score, 255);
+            },
+            _ => panic!("Expected Reply::Search, got something else!"),
+        };
+    }
 }
