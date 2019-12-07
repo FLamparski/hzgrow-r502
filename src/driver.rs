@@ -145,6 +145,9 @@ where TX: Write<u8>,
             Some(Command::Img2Tz { buffer: _ }) => {
                 Some(Reply::Img2Tz(Img2TzResult::from_payload(&self.received[..])))
             },
+            Some(Command::Search { buffer: _, start_index: _, end_index: _ }) => {
+                Some(Reply::Search(SearchResult::from_payload(&self.received[..])))
+            },
             None => None
         };
     }

@@ -15,6 +15,10 @@ pub enum Reply {
 
     /// Contains result of processing a fingerprint image into a _character buffer_
     Img2Tz(Img2TzResult),
+
+
+    /// Contains result of searching the library for a match
+    Search(SearchResult),
 }
 
 #[derive(Debug)]
@@ -98,6 +102,37 @@ for Img2TzResult {
             address: BigEndian::read_u32(&payload[2..6]),
             confirmation_code: Img2TzStatus::from(payload[9]),
             checksum: BigEndian::read_u16(&payload[10..12]),
+        };
+    }
+}
+
+#[derive(Debug)]
+pub struct SearchResult {
+    pub address: u32,
+
+    /// Search processing result
+    pub confirmation_code: SearchStatus,
+
+    /// Index, in the library, of the best match.
+    pub match_id: u16,
+
+    /// Match score
+    ///
+    /// **Note:** A match score of 0 means no match (`confirmation_code` will be `NoMatch`)
+    pub match_score: u16,
+
+    pub checksum: u16,
+}
+
+impl FromPayload
+for SearchResult {
+    fn from_payload(payload: &[u8]) -> Self {
+        return Self {
+            address: BigEndian::read_u32(&payload[2..6]),
+            confirmation_code: SearchStatus::from(payload[9]),
+            match_id: BigEndian::read_u16(&payload[10..12]),
+            match_score: BigEndian::read_u16(&payload[12..14]),
+            checksum: BigEndian::read_u16(&payload[14..16]),
         };
     }
 }
@@ -262,6 +297,27 @@ impl Img2TzStatus {
             0x07 => Self::ProcessingFailed,
             0x15 => Self::InvalidInput,
             _ => panic!("Invalid Img2TzStatus: {:02x}", byte),
+        };
+    }
+}
+
+#[derive(Debug)]
+pub enum SearchStatus {
+    /// There is a match
+    Success,
+    /// Error reading packet from the host
+    PacketError,
+    /// No match - index and score will be 0
+    NoMatch,
+}
+
+impl SearchStatus {
+    pub fn from(byte: u8) -> Self {
+        return match byte {
+            0x00 => Self::Success,
+            0x01 => Self::PacketError,
+            0x09 => Self::NoMatch,
+            _ => panic!("Invalid SearchStatus: {:02x}", byte),
         };
     }
 }
