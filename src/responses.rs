@@ -12,6 +12,9 @@ pub enum Reply {
 
     /// Contains result of acquiring an image
     GenImg(GenImgResult),
+
+    /// Contains result of processing a fingerprint image into a _character buffer_
+    Img2Tz(Img2TzResult),
 }
 
 #[derive(Debug)]
@@ -75,6 +78,25 @@ for GenImgResult {
         return Self {
             address: BigEndian::read_u32(&payload[2..6]),
             confirmation_code: GenImgStatus::from(payload[9]),
+            checksum: BigEndian::read_u16(&payload[10..12]),
+        };
+    }
+}
+
+#[derive(Debug)]
+pub struct Img2TzResult {
+    pub address: u32,
+    /// Fingerprint processing result
+    pub confirmation_code: Img2TzStatus,
+    pub checksum: u16,
+}
+
+impl FromPayload
+for Img2TzResult {
+    fn from_payload(payload: &[u8]) -> Self {
+        return Self {
+            address: BigEndian::read_u32(&payload[2..6]),
+            confirmation_code: Img2TzStatus::from(payload[9]),
             checksum: BigEndian::read_u16(&payload[10..12]),
         };
     }
@@ -207,6 +229,39 @@ impl GenImgStatus {
             0x02 => Self::FingerNotDetected,
             0x03 => Self::ImageNotCaptured,
             _ => panic!("Invalid GenImgStatus: {:02x}", byte),
+        };
+    }
+}
+
+#[derive(Debug)]
+pub enum Img2TzStatus {
+    /// Fingerprint processed successfully
+    Success,
+
+    /// Error reading packet from the host
+    PacketError,
+
+    /// Fingerprint image overly distorted
+    FingerprintImageDistorted,
+
+    /// Could not process the fingerprint image. The original datasheet helpfully states:
+    ///
+    /// > fail to generate character file due to lackness of character point or over-smallness of fingerprint image
+    ProcessingFailed,
+
+    /// Input image buffer not valid
+    InvalidInput,
+}
+
+impl Img2TzStatus {
+    pub fn from(byte: u8) -> Self {
+        return match byte {
+            0x00 => Self::Success,
+            0x01 => Self::PacketError,
+            0x06 => Self::FingerprintImageDistorted,
+            0x07 => Self::ProcessingFailed,
+            0x15 => Self::InvalidInput,
+            _ => panic!("Invalid Img2TzStatus: {:02x}", byte),
         };
     }
 }

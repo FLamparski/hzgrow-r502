@@ -141,8 +141,11 @@ where TX: Write<u8>,
             },
             Some(Command::GenImg) => {
                 Some(Reply::GenImg(GenImgResult::from_payload(&self.received[..])))
-            }
-            _ => None,
+            },
+            Some(Command::Img2Tz { buffer: _ }) => {
+                Some(Reply::Img2Tz(Img2TzResult::from_payload(&self.received[..])))
+            },
+            None => None
         };
     }
 }
@@ -406,7 +409,7 @@ mod tests {
 
         // then: reply is ok
         assert_eq!(r.is_some(), true);
-        
+
         // and: the reply is correct
         let reply = r.unwrap();
         match reply {
@@ -414,10 +417,84 @@ mod tests {
                 assert_eq!(address, 0xffffffff);
                 match confirmation_code {
                     GenImgStatus::Success => (),
-                    _ => panic!("Expected PasswordConfirmationCode::Success"),
+                    _ => panic!("Expected GenImgStatus::Success"),
                 };
             },
             _ => panic!("Expected Reply::GenImg, got something else!"),
+        };
+    }
+
+    #[test]
+    fn test_img_2_tz_serialisation() {
+        // given: a r502 instance
+        let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
+        r502.cmd_buffer.clear();
+        r502.received.clear();
+        
+        // when: preparing a GenImg command
+        r502.prepare_cmd(Command::Img2Tz { buffer: 1 });
+
+        // then: the resulting packet length is correct
+        assert_eq!(r502.cmd_buffer.len(), 13);
+        // and: the packet is correct
+        assert_eq!(&r502.cmd_buffer[..], &[
+            0xef,
+            0x01,
+            0xff,
+            0xff,
+            0xff,
+            0xff,
+            0x01,
+            0x00,
+            0x04,
+            0x02,
+            0x01,
+            0x00,
+            0x08,
+        ]);
+    }
+
+    #[test]
+    fn test_img_2_tz_deserialisation() {
+        // given: a r502 instance
+        let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
+        r502.cmd_buffer.clear();
+        r502.received.clear();
+        *r502.inflight_request.borrow_mut() = Some(Command::Img2Tz { buffer: 1 });
+
+        // and: a reply in the receive buffer
+        r502.received.try_extend_from_slice(&[
+            0xef,
+            0x01,
+            0xff,
+            0xff,
+            0xff,
+            0xff,
+            0x07,
+            0x00,
+            0x03,
+            0x00,
+            0x00,
+            0x0a,
+        ]).unwrap();
+
+        // when: parsing a reply
+        let r = r502.parse_reply();
+
+        // then: reply is ok
+        assert_eq!(r.is_some(), true);
+
+        // and: the reply is correct
+        let reply = r.unwrap();
+        match reply {
+            Reply::Img2Tz(Img2TzResult { address, confirmation_code, checksum: _ }) => {
+                assert_eq!(address, 0xffffffff);
+                match confirmation_code {
+                    Img2TzStatus::Success => (),
+                    _ => panic!("Expected Img2TzStatus::Success"),
+                };
+            },
+            _ => panic!("Expected Reply::Img2Tz, got something else!"),
         };
     }
 }
