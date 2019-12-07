@@ -18,4 +18,8 @@ pub use crate::responses::{
     PasswordVerificationState,
     GenImgResult,
     GenImgStatus,
+    Img2TzResult,
+    Img2TzStatus,
+    SearchResult,
+    SearchStatus,
 };

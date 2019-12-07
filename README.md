@@ -8,6 +8,8 @@ R502 command set but rather enough for a simple fingerprint verification device.
 - [x] **VerifyPassword** Performs a handshake with the device
 - [x] **ReadSysPara** Reads system status information
 - [x] **GenImg** Captures a fingerprint image
+- [x] **Img2Tz** Converts an image into an internal fingerprint representation
+- [x] **Search** Searches for fingerprints in the library
 
 For more, see the [projects](https://github.com/FLamparski/hzgrow-r502/projects).
 
