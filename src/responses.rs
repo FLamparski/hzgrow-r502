@@ -21,13 +21,18 @@ pub enum Reply {
     Search(SearchResult),
 }
 
+/// Result struct for the `ReadSysPara` call
 #[derive(Debug)]
 pub struct ReadSysParaResult {
+    /// Address of the R502 this message came from
     pub address: u32,
+
     /// Status code
     pub confirmation_code: u8,
+
     /// System parameters
     pub system_parameters: SystemParameters,
+
     pub checksum: u16,
 }
 
@@ -51,11 +56,15 @@ for ReadSysParaResult {
     }
 }
 
+/// Result struct for the `VfyPwd` call
 #[derive(Debug)]
 pub struct VfyPwdResult {
+    /// Address of the R502 this message came from
     pub address: u32,
+
     /// Handshake result
     pub confirmation_code: PasswordVerificationState,
+
     pub checksum: u16,
 }
 
@@ -70,11 +79,15 @@ for VfyPwdResult {
     }
 }
 
+/// Result struct for the `GenImg` call
 #[derive(Debug)]
 pub struct GenImgResult {
+    /// Address of the R502 that sent this message
     pub address: u32,
+
     /// Fingerprint capture result
     pub confirmation_code: GenImgStatus,
+
     pub checksum: u16,
 }
 
@@ -89,11 +102,15 @@ for GenImgResult {
     }
 }
 
+/// Result struct for the `Img2Tz` struct
 #[derive(Debug)]
 pub struct Img2TzResult {
+    /// Address of the R502 that sent this message
     pub address: u32,
+
     /// Fingerprint processing result
     pub confirmation_code: Img2TzStatus,
+
     pub checksum: u16,
 }
 
@@ -108,8 +125,10 @@ for Img2TzResult {
     }
 }
 
+/// Result struct for the `Search` call
 #[derive(Debug)]
 pub struct SearchResult {
+    /// Address of the R502 that sent this message
     pub address: u32,
 
     /// Search processing result
@@ -149,14 +168,13 @@ pub struct SystemParameters {
     /// 0x0009
     pub system_identifier_code: u16,
 
-    /// Finger library size.
+    /// Finger library size (maximum, not the number of fingerprints enrolled)
     pub finger_library_size: u16,
 
     /// Security level [1-5]
     pub security_level: u16,
 
-    /// Device address, in case you forgot, but then you'd need the device address to send it the
-    /// `ReadSysPara` command... 🤔
+    /// Device address, repeated from the packet header
     pub device_address: u32,
 
     /// Packet size. Actually a size code [0-3]:\ 
@@ -175,6 +193,7 @@ pub struct SystemParameters {
     pub baud_setting: u16,
 }
 
+/// Convenience methods for reading fields of the R502's status register
 impl SystemParameters {
     /// True if the R502 is busy executing another command.
     ///
@@ -200,7 +219,8 @@ impl SystemParameters {
 
     /// True if the image buffer contains a valid image.
     ///
-    /// *ImgBufStat* in the datasheet.
+    /// *ImgBufStat* in the datasheet. Note that this method may return `false`
+    /// and yet the R502 would still function and perform matches.
     pub fn has_valid_image(self) -> bool {
         return self.status_register & (1u16 << 3) != 0;
     }
@@ -243,6 +263,7 @@ impl PasswordVerificationState {
     }
 }
 
+/// Enum for the `GenImg` status code
 #[derive(Debug)]
 pub enum GenImgStatus {
     /// Fingerprint has been captured successfully
@@ -270,6 +291,7 @@ impl GenImgStatus {
     }
 }
 
+/// Enum for the `Img2Tz` status code
 #[derive(Debug)]
 pub enum Img2TzStatus {
     /// Fingerprint processed successfully
@@ -303,6 +325,7 @@ impl Img2TzStatus {
     }
 }
 
+/// Enum for the `Search` status code
 #[derive(Debug)]
 pub enum SearchStatus {
     /// There is a match

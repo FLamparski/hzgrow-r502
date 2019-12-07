@@ -1,11 +1,12 @@
 use crate::utils::{ToPayload, CommandWriter};
-//# Naming conventions etc follow the R502 datasheet, see:
-//# https://www.dropbox.com/sh/epucei8lmoz7xpp/AAAmon04b1DiSOeh1q4nAhzAa?dl=0&preview=R502+fingerprint+module+user+manual-V1.2.pdf
 
-/// Enum for commands one can send to the R502. Names match the datasheet.
+/// Commands that one can send to the R502. Command naming and some field names are taken from the R502 datasheet.
+/// 
+/// [Datasheet link](https://www.dropbox.com/sh/epucei8lmoz7xpp/AAAmon04b1DiSOeh1q4nAhzAa?dl=0&preview=R502+fingerprint+module+user+manual-V1.2.pdf) -
+/// yes, it actually is hosted on Dropbox.
 #[derive(Debug)]
 pub enum Command {
-    /// Reads system status and basic configuration
+    /// Reads system status and configuration
     ReadSysPara,
 
     /// Performs a handshake with the device to verify the password.
@@ -15,10 +16,12 @@ pub enum Command {
         password: u32,
     },
 
-    /// Captures an image of the fingerprint
+    /// Captures an image of the fingerprint into the _image buffer_.
     GenImg,
 
-    /// Processes an image into a _character buffer_
+    /// Processes the image from the R502's _image buffer_ into one of the two
+    /// available _character buffers_. This command actually runs the image recognition
+    /// and builds a feature vector-like representation of the fingerprint captured.
     Img2Tz {
         /// Which buffer to store the processed fingerprint data into (there are 2).
         /// 
@@ -26,17 +29,19 @@ pub enum Command {
         buffer: u8,
     },
 
-    /// Matches the captured fingerprint against a number of stored templates.
+    /// Matches the captured fingerprint against a number of stored templates. You can set the
+    /// `start_index` and `end_index` to `0` and `0xff` respectively to search the entire library.
     Search {
         /// Which buffer to store the processed fingerprint data into (there are 2).
         /// 
         /// **Note:** The buffers are named **1** and **2**. Any other value defaults to 2.
         buffer: u8,
 
-        /// The start index - presumably, from which index onwards the search goes
+        /// The start index. Where the search should start from. 0-based.
         start_index: u16,
 
-        /// The end index - presumably, until which index the search goes
+        /// The end index. Where the search should stop. No word on whether this is inclusive or
+        /// exclusive.
         end_index: u16,
     },
 }

@@ -11,6 +11,9 @@ use crate::utils::{FromPayload, CommandWriter, ToPayload};
 const REPLY_HEADER_LENGTH: u16 = 9;
 
 /// Represents a R502 device connected to a U(S)ART.
+/// 
+/// A R502 has an address, which may mean that the intention is to use one USART line as a bus
+/// network with multiple sensors attached to it. This is not explicitly supported by this driver.
 #[derive(Debug)]
 pub struct R502<TX, RX> {
     address: u32,
@@ -32,6 +35,8 @@ impl<TX, RX> R502<TX, RX>
 where TX: Write<u8>,
       RX: Read<u8>
 {
+    /// Creates an instance of the R502. `tx` and `rx` are the transmit and receive halves of a
+    /// USART, and `address` is the R502 address. By default this should be `0xffffffff`.
     pub fn new(tx: TX, rx: RX, address: u32) -> Self {
         Self {
             address: address,
@@ -43,8 +48,9 @@ where TX: Write<u8>,
         }
     }
 
-    /// Sends a command to the R502 and then blocks waiting for the reply.
-    /// The return value is either a response from the R502 or an `Err(())`.
+    /// Sends a command `cmd` to the R502 and then blocks waiting for the reply.
+    /// The return value is either a response from the R502 or an `Err(())`. Uses blocking USART
+    /// API.
     /// 
     /// TODO: Add better error results.
     pub fn send_command(&mut self, cmd: Command) -> Result<Reply, ()> {
