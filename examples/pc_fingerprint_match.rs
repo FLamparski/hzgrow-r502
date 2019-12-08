@@ -1,6 +1,6 @@
 use std::{env, cell::RefCell, time::Duration};
 use serialport::{available_ports, open};
-use hzgrow_r502::{R502, Command, Reply, GenImgStatus};
+use hzgrow_r502::{R502, Command, Reply, GenImgStatus, MatchStatus};
 
 mod pc_utils;
 use pc_utils::{SerialReader, SerialWriter};
@@ -99,6 +99,22 @@ fn run_test(port_name: &str, library_index: u16) {
     println!("Command: {:#?}", cmd);
     match r502.send_command(cmd) {
         Ok(Reply::LoadChar(result)) => println!("Reply: {:#?}", result),
+        Err(e) => panic!("Error: {:#?}", e),
+        msg => panic!("Unexpected msg: {:#?}", msg),
+    };
+
+    println!("7. Match");
+
+    println!("Command: {:#?}", Command::Match);
+    match r502.send_command(Command::Match) {
+        Ok(Reply::Match(result)) => {
+            print!("Confidence value = {}... ", result.match_score);
+            match result.confirmation_code {
+                MatchStatus::Success => println!("Match successful! *hacker voice* You're in"),
+                MatchStatus::NoMatch => println!("No match!"),
+                MatchStatus::PacketError => println!("Something bad happened"),
+            };
+        },
         Err(e) => panic!("Error: {:#?}", e),
         msg => panic!("Unexpected msg: {:#?}", msg),
     };
