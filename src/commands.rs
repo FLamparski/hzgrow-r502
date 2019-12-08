@@ -44,6 +44,17 @@ pub enum Command {
         /// exclusive.
         end_index: u16,
     },
+
+    /// Loads a fingerprint _character file_ into one of the two _character buffers_.
+    LoadChar {
+        /// Which buffer to store the processed fingerprint data into (there are 2).
+        /// 
+        /// **Note:** The buffers are named **1** and **2**. Any other value defaults to 2.
+        buffer: u8,
+
+        /// Which fingerprint to load from the library (0-based index).
+        index: u16,
+    },
 }
 
 impl ToPayload
@@ -123,6 +134,23 @@ for Command {
                 writer.write_cmd_bytes(&[*buffer]);
                 writer.write_cmd_bytes(&start_index.to_be_bytes()[..]);
                 writer.write_cmd_bytes(&end_index.to_be_bytes()[..]);
+            }
+
+            // Required packet:
+            // headr  | 0xEF 0x01 [2]
+            // addr   | cmd.address [4]
+            // ident  | 0x01 [1]
+            // length | 0x00 0x06 [2]
+            // instr  | 0x07 [1]
+            // bufid  | buffer [1]
+            // sstart | index [2]
+            // chksum | checksum [2]
+            Self::LoadChar { buffer, index } => {
+                writer.write_cmd_bytes(&[0x01]);
+                writer.write_cmd_bytes(&[0x00, 0x06]);
+                writer.write_cmd_bytes(&[0x07]);
+                writer.write_cmd_bytes(&[*buffer]);
+                writer.write_cmd_bytes(&index.to_be_bytes()[..]);
             }
         }
     }
