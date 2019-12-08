@@ -19,6 +19,9 @@ pub enum Reply {
 
     /// Contains result of searching the library for a match
     Search(SearchResult),
+
+    /// Contains result of loading a character file into a character buffer
+    LoadChar(LoadCharResult),
 }
 
 /// Result struct for the `ReadSysPara` call
@@ -155,6 +158,29 @@ for SearchResult {
             match_score: BigEndian::read_u16(&payload[12..14]),
             checksum: BigEndian::read_u16(&payload[14..16]),
         };
+    }
+}
+
+/// Structure containing the status code of the `LoadChar` call
+#[derive(Debug)]
+pub struct LoadCharResult {
+    /// Address of the R502 that sent this message
+    pub address: u32,
+
+    /// Response code
+    pub confirmation_code: LoadCharStatus,
+
+    pub checksum: u16,
+}
+
+impl FromPayload
+for LoadCharResult {
+    fn from_payload(payload: &[u8]) -> Self {
+        return Self {
+            address: BigEndian::read_u32(&payload[2..6]),
+            confirmation_code: LoadCharStatus::from(payload[9]),
+            checksum: BigEndian::read_u16(&payload[10..12]),
+        }
     }
 }
 
@@ -343,6 +369,33 @@ impl SearchStatus {
             0x01 => Self::PacketError,
             0x09 => Self::NoMatch,
             _ => panic!("Invalid SearchStatus: {:02x}", byte),
+        };
+    }
+}
+
+/// `LoadChar` status code
+#[derive(Debug)]
+pub enum LoadCharStatus {
+    /// Operation completed successfully.
+    Success,
+    /// Error reading packet from the host
+    PacketError,
+    /// Error reading the fingerprint file from the library:
+    /// 
+    /// > error when reading template from library or the read out template is invalid
+    LibraryReadError,
+    /// Index given is out of range (eg. > 200 for the R502)
+    IndexOutOfRange,
+}
+
+impl LoadCharStatus {
+    pub fn from(byte: u8) -> Self {
+        return match byte {
+            0x00 => Self::Success,
+            0x01 => Self::PacketError,
+            0x0c => Self::LibraryReadError,
+            0x0b => Self::IndexOutOfRange,
+            _ => panic!("Invalid LoadCharStatus: {:02x}", byte),
         };
     }
 }

@@ -154,6 +154,9 @@ where TX: Write<u8>,
             Some(Command::Search { buffer: _, start_index: _, end_index: _ }) => {
                 Some(Reply::Search(SearchResult::from_payload(&self.received[..])))
             },
+            Some(Command::LoadChar { buffer: _, index: _ }) => {
+                Some(Reply::LoadChar(LoadCharResult::from_payload(&self.received[..])))
+            },
             None => None
         };
     }
@@ -588,6 +591,82 @@ mod tests {
                 assert_eq!(match_score, 255);
             },
             _ => panic!("Expected Reply::Search, got something else!"),
+        };
+    }
+
+    #[test]
+    fn test_load_char_serialisation() {
+        // given: a r502 instance
+        let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
+        r502.cmd_buffer.clear();
+        r502.received.clear();
+        
+        // when: preparing a GenImg command
+        r502.prepare_cmd(Command::LoadChar { buffer: 2, index: 0 });
+    
+        // then: the resulting packet length is correct
+        assert_eq!(r502.cmd_buffer.len(), 15);
+        // and: the packet is correct
+        assert_eq!(&r502.cmd_buffer[..], &[
+            0xef,
+            0x01,
+            0xff,
+            0xff,
+            0xff,
+            0xff,
+            0x01,
+            0x00,
+            0x06,
+            0x07,
+            0x02,
+            0x00,
+            0x00,
+            0x00,
+            0x10,
+        ]);
+    }
+
+    #[test]
+    fn test_load_char_tz_deserialisation() {
+        // given: a r502 instance
+        let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
+        r502.cmd_buffer.clear();
+        r502.received.clear();
+        *r502.inflight_request.borrow_mut() = Some(Command::LoadChar { buffer: 2, index: 0 });
+
+        // and: a reply in the receive buffer
+        r502.received.try_extend_from_slice(&[
+            0xef,
+            0x01,
+            0xff,
+            0xff,
+            0xff,
+            0xff,
+            0x07,
+            0x00,
+            0x03,
+            0x00,
+            0x00,
+            0x0a,
+        ]).unwrap();
+
+        // when: parsing a reply
+        let r = r502.parse_reply();
+
+        // then: reply is ok
+        assert_eq!(r.is_some(), true);
+
+        // and: the reply is correct
+        let reply = r.unwrap();
+        match reply {
+            Reply::LoadChar(LoadCharResult { address, confirmation_code, checksum: _ }) => {
+                assert_eq!(address, 0xffffffff);
+                match confirmation_code {
+                    LoadCharStatus::Success => (),
+                    _ => panic!("Expected LoadCharStatus::Success"),
+                };
+            },
+            _ => panic!("Expected Reply::LoadChar, got something else!"),
         };
     }
 }

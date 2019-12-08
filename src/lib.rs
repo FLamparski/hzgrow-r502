@@ -8,7 +8,7 @@
 //! ## Example
 //! 
 //! To authenticate with the R502:
-//! ```rust
+//! ```ignore
 //! let (mut tx, mut rx) = serial.split();
 //! let mut r502 = R502::new(tx, rx, 0xffffffff);
 //! 
@@ -41,4 +41,6 @@ pub use crate::responses::{
     Img2TzStatus,
     SearchResult,
     SearchStatus,
+    LoadCharResult,
+    LoadCharStatus,
 };
