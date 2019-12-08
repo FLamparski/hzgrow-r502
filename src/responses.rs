@@ -16,12 +16,14 @@ pub enum Reply {
     /// Contains result of processing a fingerprint image into a _character buffer_
     Img2Tz(Img2TzResult),
 
-
     /// Contains result of searching the library for a match
     Search(SearchResult),
 
     /// Contains result of loading a character file into a character buffer
     LoadChar(LoadCharResult),
+
+    /// Contains result of matching two fingers against each other
+    Match(MatchResult),
 }
 
 /// Result struct for the `ReadSysPara` call
@@ -181,6 +183,33 @@ for LoadCharResult {
             confirmation_code: LoadCharStatus::from(payload[9]),
             checksum: BigEndian::read_u16(&payload[10..12]),
         }
+    }
+}
+
+/// Structure containing the status code of the `Match` call
+#[derive(Debug)]
+pub struct MatchResult {
+        /// Address of the R502 that sent this message
+        pub address: u32,
+
+        /// Response code
+        pub confirmation_code: MatchStatus,
+
+        /// Match confidence value
+        pub match_score: u16,
+    
+        pub checksum: u16,
+}
+
+impl FromPayload
+for MatchResult {
+    fn from_payload(payload: &[u8]) -> Self {
+        return Self {
+            address: BigEndian::read_u32(&payload[2..6]),
+            confirmation_code: MatchStatus::from(payload[9]),
+            match_score: BigEndian::read_u16(&payload[10..12]),
+            checksum: BigEndian::read_u16(&payload[12..14]),
+        };
     }
 }
 
@@ -396,6 +425,28 @@ impl LoadCharStatus {
             0x0c => Self::LibraryReadError,
             0x0b => Self::IndexOutOfRange,
             _ => panic!("Invalid LoadCharStatus: {:02x}", byte),
+        };
+    }
+}
+
+/// `Match` status code
+#[derive(Debug)]
+pub enum MatchStatus {
+    /// Match performed successfully and the two buffers match
+    Success,
+    /// Error reading packet from the host
+    PacketError,
+    /// Matching was performed but the two buffers don't match
+    NoMatch,
+}
+
+impl MatchStatus {
+    fn from(byte: u8) -> Self {
+        return match byte {
+            0x00 => Self::Success,
+            0x01 => Self::PacketError,
+            0x08 => Self::NoMatch,
+            _ => panic!("Invalid MatchStatus: {:02x}", byte),
         };
     }
 }

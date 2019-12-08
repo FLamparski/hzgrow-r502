@@ -157,6 +157,9 @@ where TX: Write<u8>,
             Some(Command::LoadChar { buffer: _, index: _ }) => {
                 Some(Reply::LoadChar(LoadCharResult::from_payload(&self.received[..])))
             },
+            Some(Command::Match) => {
+                Some(Reply::Match(MatchResult::from_payload(&self.received[..])))
+            },
             None => None
         };
     }

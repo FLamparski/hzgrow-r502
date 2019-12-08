@@ -43,4 +43,6 @@ pub use crate::responses::{
     SearchStatus,
     LoadCharResult,
     LoadCharStatus,
+    MatchResult,
+    MatchStatus,
 };

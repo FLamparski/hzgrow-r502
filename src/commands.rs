@@ -55,6 +55,11 @@ pub enum Command {
         /// Which fingerprint to load from the library (0-based index).
         index: u16,
     },
+
+    /// Performs a match between the two _character buffers_. This will typically be used
+    /// to match a new fingerprint against a known template, to verify that the correct
+    /// finger is placed on the reader.
+    Match,
 }
 
 impl ToPayload
@@ -151,6 +156,19 @@ for Command {
                 writer.write_cmd_bytes(&[0x07]);
                 writer.write_cmd_bytes(&[*buffer]);
                 writer.write_cmd_bytes(&index.to_be_bytes()[..]);
+            }
+
+            // Required packet:
+            // headr  | 0xEF 0x01 [2]
+            // addr   | cmd.address [4]
+            // ident  | 0x01 [1]
+            // length | 0x00 0x03 [2]
+            // instr  | 0x03 [1]
+            // chksum | checksum [2]
+            Self::Match => {
+                writer.write_cmd_bytes(&[0x01]);
+                writer.write_cmd_bytes(&[0x00, 0x03]);
+                writer.write_cmd_bytes(&[0x03]);
             }
         }
     }
