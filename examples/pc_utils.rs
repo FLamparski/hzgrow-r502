@@ -1,6 +1,6 @@
-use std::cell::RefCell;
-use serialport::prelude::*;
 use embedded_hal::serial::{Read, Write};
+use serialport::prelude::*;
+use std::cell::RefCell;
 
 // We're cheating here and will use the host OS's serial port
 // as our UART, and for that we have to implement the read/write
@@ -16,14 +16,16 @@ impl Read<u8> for SerialReader<'_> {
         let mut buf: [u8; 1] = [0u8];
         loop {
             match self.0.borrow_mut().read(&mut buf) {
-                Ok(n) => if n == 1 {
-                    println!("read: {:02x}", buf[0]);
-                    return Ok(buf[0]);
-                },
+                Ok(n) => {
+                    if n == 1 {
+                        println!("read: {:02x}", buf[0]);
+                        return Ok(buf[0]);
+                    }
+                }
                 Err(e) => {
                     println!("Error: {:#?}", e);
                     return Err(nb::Error::from(e));
-                },
+                }
             };
         }
     }
@@ -36,10 +38,12 @@ impl Write<u8> for SerialWriter<'_> {
         let buf: [u8; 1] = [word];
         loop {
             match self.0.borrow_mut().write(&buf) {
-                Ok(n) => if n == 1 {
-                    println!("write: {:02x}", word);
-                    return Ok(());
-                },
+                Ok(n) => {
+                    if n == 1 {
+                        println!("write: {:02x}", word);
+                        return Ok(());
+                    }
+                }
                 Err(e) => {
                     return Err(nb::Error::from(e));
                 }

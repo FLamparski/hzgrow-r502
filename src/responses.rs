@@ -1,5 +1,5 @@
 use crate::utils::FromPayload;
-use byteorder::{ByteOrder, BigEndian};
+use byteorder::{BigEndian, ByteOrder};
 
 /// Responses to commands returned by the R502. Names are the same as commands.
 #[derive(Debug)]
@@ -41,8 +41,7 @@ pub struct ReadSysParaResult {
     pub checksum: u16,
 }
 
-impl FromPayload
-for ReadSysParaResult {
+impl FromPayload for ReadSysParaResult {
     // Expected packet:
     // headr  | 0xEF 0x01 [2]
     // addr   | cmd.address [4]
@@ -73,8 +72,7 @@ pub struct VfyPwdResult {
     pub checksum: u16,
 }
 
-impl FromPayload
-for VfyPwdResult {
+impl FromPayload for VfyPwdResult {
     fn from_payload(payload: &[u8]) -> Self {
         return Self {
             address: BigEndian::read_u32(&payload[2..6]),
@@ -96,8 +94,7 @@ pub struct GenImgResult {
     pub checksum: u16,
 }
 
-impl FromPayload
-for GenImgResult {
+impl FromPayload for GenImgResult {
     fn from_payload(payload: &[u8]) -> Self {
         return Self {
             address: BigEndian::read_u32(&payload[2..6]),
@@ -119,8 +116,7 @@ pub struct Img2TzResult {
     pub checksum: u16,
 }
 
-impl FromPayload
-for Img2TzResult {
+impl FromPayload for Img2TzResult {
     fn from_payload(payload: &[u8]) -> Self {
         return Self {
             address: BigEndian::read_u32(&payload[2..6]),
@@ -150,8 +146,7 @@ pub struct SearchResult {
     pub checksum: u16,
 }
 
-impl FromPayload
-for SearchResult {
+impl FromPayload for SearchResult {
     fn from_payload(payload: &[u8]) -> Self {
         return Self {
             address: BigEndian::read_u32(&payload[2..6]),
@@ -175,34 +170,32 @@ pub struct LoadCharResult {
     pub checksum: u16,
 }
 
-impl FromPayload
-for LoadCharResult {
+impl FromPayload for LoadCharResult {
     fn from_payload(payload: &[u8]) -> Self {
         return Self {
             address: BigEndian::read_u32(&payload[2..6]),
             confirmation_code: LoadCharStatus::from(payload[9]),
             checksum: BigEndian::read_u16(&payload[10..12]),
-        }
+        };
     }
 }
 
 /// Structure containing the status code of the `Match` call
 #[derive(Debug)]
 pub struct MatchResult {
-        /// Address of the R502 that sent this message
-        pub address: u32,
+    /// Address of the R502 that sent this message
+    pub address: u32,
 
-        /// Response code
-        pub confirmation_code: MatchStatus,
+    /// Response code
+    pub confirmation_code: MatchStatus,
 
-        /// Match confidence value
-        pub match_score: u16,
-    
-        pub checksum: u16,
+    /// Match confidence value
+    pub match_score: u16,
+
+    pub checksum: u16,
 }
 
-impl FromPayload
-for MatchResult {
+impl FromPayload for MatchResult {
     fn from_payload(payload: &[u8]) -> Self {
         return Self {
             address: BigEndian::read_u32(&payload[2..6]),
@@ -232,10 +225,10 @@ pub struct SystemParameters {
     /// Device address, repeated from the packet header
     pub device_address: u32,
 
-    /// Packet size. Actually a size code [0-3]:\ 
-    /// 0 = 32 bytes\ 
-    /// 1 = 64 bytes\ 
-    /// 2 = 128 bytes (the default)\ 
+    /// Packet size. Actually a size code [0-3]:\
+    /// 0 = 32 bytes\
+    /// 1 = 64 bytes\
+    /// 2 = 128 bytes (the default)\
     /// 3 = 256 bytes
     pub packet_size: u16,
 
@@ -281,8 +274,7 @@ impl SystemParameters {
     }
 }
 
-impl FromPayload
-for SystemParameters {
+impl FromPayload for SystemParameters {
     fn from_payload(payload: &[u8]) -> SystemParameters {
         // HZ R502's datasheet is a little inconsistent - sometimes the sizes are given in bytes
         // and sometimes in words; words are 16 bit (2 byte).
@@ -410,7 +402,7 @@ pub enum LoadCharStatus {
     /// Error reading packet from the host
     PacketError,
     /// Error reading the fingerprint file from the library:
-    /// 
+    ///
     /// > error when reading template from library or the read out template is invalid
     LibraryReadError,
     /// Index given is out of range (eg. > 200 for the R502)

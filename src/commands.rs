@@ -1,7 +1,7 @@
-use crate::utils::{ToPayload, CommandWriter};
+use crate::utils::{CommandWriter, ToPayload};
 
 /// Commands that one can send to the R502. Command naming and some field names are taken from the R502 datasheet.
-/// 
+///
 /// [Datasheet link](https://www.dropbox.com/sh/epucei8lmoz7xpp/AAAmon04b1DiSOeh1q4nAhzAa?dl=0&preview=R502+fingerprint+module+user+manual-V1.2.pdf) -
 /// yes, it actually is hosted on Dropbox.
 #[derive(Debug)]
@@ -24,7 +24,7 @@ pub enum Command {
     /// and builds a feature vector-like representation of the fingerprint captured.
     Img2Tz {
         /// Which buffer to store the processed fingerprint data into (there are 2).
-        /// 
+        ///
         /// **Note:** The buffers are named **1** and **2**. Any other value defaults to 2.
         buffer: u8,
     },
@@ -33,7 +33,7 @@ pub enum Command {
     /// `start_index` and `end_index` to `0` and `0xff` respectively to search the entire library.
     Search {
         /// Which buffer to store the processed fingerprint data into (there are 2).
-        /// 
+        ///
         /// **Note:** The buffers are named **1** and **2**. Any other value defaults to 2.
         buffer: u8,
 
@@ -48,7 +48,7 @@ pub enum Command {
     /// Loads a fingerprint _character file_ into one of the two _character buffers_.
     LoadChar {
         /// Which buffer to store the processed fingerprint data into (there are 2).
-        /// 
+        ///
         /// **Note:** The buffers are named **1** and **2**. Any other value defaults to 2.
         buffer: u8,
 
@@ -62,8 +62,7 @@ pub enum Command {
     Match,
 }
 
-impl ToPayload
-for Command {
+impl ToPayload for Command {
     fn to_payload(&self, writer: &mut dyn CommandWriter) {
         match self {
             // Required packet:
@@ -77,7 +76,7 @@ for Command {
                 writer.write_cmd_bytes(&[0x01]);
                 writer.write_cmd_bytes(&[0x00, 0x03]);
                 writer.write_cmd_bytes(&[0x0F]);
-            },
+            }
 
             // Required packet:
             // headr  | 0xEF 0x01 [2]
@@ -92,7 +91,7 @@ for Command {
                 writer.write_cmd_bytes(&[0x00, 0x07]);
                 writer.write_cmd_bytes(&[0x13]);
                 writer.write_cmd_bytes(&password.to_be_bytes()[..]);
-            },
+            }
 
             // Required packet:
             // headr  | 0xEF 0x01 [2]
@@ -132,7 +131,11 @@ for Command {
             // sstart | start_index [2]
             // send   | end_index [2]
             // chksum | checksum [2]
-            Self::Search { buffer, start_index, end_index } => {
+            Self::Search {
+                buffer,
+                start_index,
+                end_index,
+            } => {
                 writer.write_cmd_bytes(&[0x01]);
                 writer.write_cmd_bytes(&[0x00, 0x08]);
                 writer.write_cmd_bytes(&[0x04]);

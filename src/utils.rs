@@ -9,7 +9,7 @@ pub trait CommandWriter {
 }
 
 /// Allows a type to define how to serialise itself into a CommandWriter.
-/// 
+///
 /// This is implemented so that byte-level stuff can be kept out of the
 /// main driver implementation body.
 pub trait ToPayload {
@@ -18,7 +18,7 @@ pub trait ToPayload {
 
 /// Error type for low-level R502 operations. Wraps transport-level
 /// errors as well.
-/// 
+///
 /// `RXE` and `TXE` will be the `Error` type(s) of your serial port
 /// implementation, as defined by `embedded_hal::serial::Read<u8>::Error`
 /// and `embedded_hal::serial::Write<u8>::Error` respectively.
@@ -36,7 +36,7 @@ pub enum Error<TXE, RXE> {
     RecvPacketTooShort,
 
     /// There were no requests in flight when a packet was received.
-    /// 
+    ///
     /// _This probably shouldn't happen at this point_
     RecvUnsolicitedReply,
 
