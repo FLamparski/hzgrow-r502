@@ -1,17 +1,17 @@
-use embedded_hal::{serial::{Read, Write}};
 use arrayvec::ArrayVec;
-use nb::block;
-use byteorder::{ByteOrder, BigEndian};
+use byteorder::{BigEndian, ByteOrder};
 use core::cell::RefCell;
+use embedded_hal::serial::{Read, Write};
+use nb::block;
 
 use crate::commands::Command;
 use crate::responses::*;
-use crate::utils::{FromPayload, CommandWriter, ToPayload};
+use crate::utils::{CommandWriter, Error, FromPayload, ToPayload};
 
 const REPLY_HEADER_LENGTH: u16 = 9;
 
 /// Represents a R502 device connected to a U(S)ART.
-/// 
+///
 /// A R502 has an address, which may mean that the intention is to use one USART line as a bus
 /// network with multiple sensors attached to it. This is not explicitly supported by this driver.
 #[derive(Debug)]
@@ -24,16 +24,16 @@ pub struct R502<TX, RX> {
     inflight_request: RefCell<Option<Command>>,
 }
 
-impl<TX, RX> CommandWriter
-for R502<TX, RX> {
+impl<TX, RX> CommandWriter for R502<TX, RX> {
     fn write_cmd_bytes(&mut self, bytes: &[u8]) {
         self.cmd_buffer.try_extend_from_slice(bytes).unwrap();
     }
 }
 
 impl<TX, RX> R502<TX, RX>
-where TX: Write<u8>,
-      RX: Read<u8>
+where
+    TX: Write<u8>,
+    RX: Read<u8>,
 {
     /// Creates an instance of the R502. `tx` and `rx` are the transmit and receive halves of a
     /// USART, and `address` is the R502 address. By default this should be `0xffffffff`.
@@ -49,29 +49,43 @@ where TX: Write<u8>,
     }
 
     /// Sends a command `cmd` to the R502 and then blocks waiting for the reply.
-    /// The return value is either a response from the R502 or an `Err(())`. Uses blocking USART
+    /// The return value is either a response from the R502 or an error. Uses blocking USART
     /// API.
-    /// 
-    /// TODO: Add better error results.
-    pub fn send_command(&mut self, cmd: Command) -> Result<Reply, ()> {
+    ///
+    /// # Errors
+    ///
+    /// ## `Error::WriteError(err)`
+    /// Returned if the command could not be written to the serial port.
+    /// Wraps the underlying error.
+    ///
+    /// ## `Error::ReadError(err)`
+    /// Returned if the reply could not be read from the serial port.
+    /// Wraps the underlying error.
+    ///
+    /// ## `Error::RecvPacketTooShort`
+    /// Returned if the reply was only partially received.
+    ///
+    /// ## `Error::RecvWrongReplyType`
+    /// Returned if the response packet was not a reply.
+    pub fn send_command(&mut self, cmd: Command) -> Result<Reply, Error<TX::Error, RX::Error>> {
         self.cmd_buffer.clear();
         self.received.clear();
         self.prepare_cmd(cmd);
 
         let cmd_bytes = &self.cmd_buffer[..];
         for byte in cmd_bytes {
-            block!(self.tx.write(*byte)).ok();
-        }
-
-        block!(self.tx.flush()).ok();
-
-        if self.read_reply().is_some() {
-            if let Some(reply) = self.parse_reply() {
-                return Result::Ok(reply);
+            match block!(self.tx.write(*byte)) {
+                Err(e) => return Err(Error::WriteError(e)),
+                Ok(..) => {}
             }
         }
 
-        return Result::Err(());
+        match block!(self.tx.flush()) {
+            Err(e) => return Err(Error::WriteError(e)),
+            Ok(..) => {}
+        }
+
+        return self.read_reply().and_then(|_| self.parse_reply());
     }
 
     fn prepare_cmd(&mut self, cmd: Command) {
@@ -98,69 +112,72 @@ where TX: Write<u8>,
         return checksum;
     }
 
-    fn read_reply(&mut self) -> Option<u16> {
+    fn read_reply(&mut self) -> Result<u16, Error<TX::Error, RX::Error>> {
         // At first, we don't know the full packet size, so read in the
         // first 9 bytes of the packet header.
         for _ in 0..REPLY_HEADER_LENGTH {
-            if let Some(byte) = block!(self.rx.read()).ok() {
-                self.received.push(byte);
-            } else {
-                return None;
+            match block!(self.rx.read()) {
+                Ok(word) => self.received.push(word),
+                Err(error) => return Err(Error::RecvReadError(error)),
             }
         }
 
         let length = BigEndian::read_u16(&self.received[7..9]);
         for _ in 0..length {
-            if let Some(byte) = block!(self.rx.read()).ok() {
-                self.received.push(byte);
-            } else {
-                return None;
+            match block!(self.rx.read()) {
+                Ok(word) => self.received.push(word),
+                Err(error) => return Err(Error::RecvReadError(error)),
             }
         }
 
-        return Some(REPLY_HEADER_LENGTH + length);
+        return Ok(REPLY_HEADER_LENGTH + length);
     }
 
-    fn parse_reply(&self) -> Option<Reply> {
+    fn parse_reply(&self) -> Result<Reply, Error<TX::Error, RX::Error>> {
         // Packet ID is in byte 6
         if self.received.len() < 7 {
-            return None;
+            return Err(Error::RecvPacketTooShort);
         }
 
         // We have no business reading anything if there's no request in flight
         let inflight = self.inflight_request.borrow();
         if inflight.is_none() {
-            return None;
+            return Err(Error::RecvUnsolicitedReply);
         }
 
         // We are looking for a response packet
         if self.received[6] != 0x07 {
-            return None;
+            return Err(Error::RecvWrongReplyType);
         }
 
         return match *inflight {
-            Some(Command::ReadSysPara) => {
-                Some(Reply::ReadSysPara(ReadSysParaResult::from_payload(&self.received[..])))
-            },
-            Some(Command::VfyPwd { password: _ }) => {
-                Some(Reply::VfyPwd(VfyPwdResult::from_payload(&self.received[..])))
-            },
-            Some(Command::GenImg) => {
-                Some(Reply::GenImg(GenImgResult::from_payload(&self.received[..])))
-            },
-            Some(Command::Img2Tz { buffer: _ }) => {
-                Some(Reply::Img2Tz(Img2TzResult::from_payload(&self.received[..])))
-            },
-            Some(Command::Search { buffer: _, start_index: _, end_index: _ }) => {
-                Some(Reply::Search(SearchResult::from_payload(&self.received[..])))
-            },
-            Some(Command::LoadChar { buffer: _, index: _ }) => {
-                Some(Reply::LoadChar(LoadCharResult::from_payload(&self.received[..])))
-            },
-            Some(Command::Match) => {
-                Some(Reply::Match(MatchResult::from_payload(&self.received[..])))
-            },
-            None => None
+            Some(Command::ReadSysPara) => Ok(Reply::ReadSysPara(ReadSysParaResult::from_payload(
+                &self.received[..],
+            ))),
+            Some(Command::VfyPwd { password: _ }) => Ok(Reply::VfyPwd(VfyPwdResult::from_payload(
+                &self.received[..],
+            ))),
+            Some(Command::GenImg) => Ok(Reply::GenImg(GenImgResult::from_payload(
+                &self.received[..],
+            ))),
+            Some(Command::Img2Tz { buffer: _ }) => Ok(Reply::Img2Tz(Img2TzResult::from_payload(
+                &self.received[..],
+            ))),
+            Some(Command::Search {
+                buffer: _,
+                start_index: _,
+                end_index: _,
+            }) => Ok(Reply::Search(SearchResult::from_payload(
+                &self.received[..],
+            ))),
+            Some(Command::LoadChar {
+                buffer: _,
+                index: _,
+            }) => Ok(Reply::LoadChar(LoadCharResult::from_payload(
+                &self.received[..],
+            ))),
+            Some(Command::Match) => Ok(Reply::Match(MatchResult::from_payload(&self.received[..]))),
+            None => panic!("Should not be reached"),
         };
     }
 }
@@ -171,7 +188,7 @@ mod tests {
 
     struct TestTx;
     struct TestRx;
-    
+
     impl Write<u8> for TestTx {
         type Error = ();
         fn write(&mut self, _word: u8) -> nb::Result<(), Self::Error> {
@@ -188,7 +205,7 @@ mod tests {
             return Ok(0u8);
         }
     }
-    
+
     #[test]
     fn checksum_tests() {
         // given: a r502 instance
@@ -216,20 +233,10 @@ mod tests {
         // then: the resulting packet length is correct
         assert_eq!(r502.cmd_buffer.len(), 12);
         // and: the packet is correct
-        assert_eq!(&r502.cmd_buffer[..], &[
-            0xef,
-            0x01,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0x01,
-            0x00,
-            0x03,
-            0x0f,
-            0x00,
-            0x13,
-        ]);
+        assert_eq!(
+            &r502.cmd_buffer[..],
+            &[0xef, 0x01, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x03, 0x0f, 0x00, 0x13,]
+        );
     }
 
     #[test]
@@ -241,50 +248,31 @@ mod tests {
         *r502.inflight_request.borrow_mut() = Some(Command::ReadSysPara);
 
         // and: a reply in the receive buffer
-        r502.received.try_extend_from_slice(&[
-            0xef,
-            0x01,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0x07,
-            0x00,
-            0x13,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0xc8,
-            0x00,
-            0x03,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0x00,
-            0x02,
-            0x00,
-            0x06,
-            0x04,
-            0xe9,
-        ]).unwrap();
+        r502.received
+            .try_extend_from_slice(&[
+                0xef, 0x01, 0xff, 0xff, 0xff, 0xff, 0x07, 0x00, 0x13, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0xc8, 0x00, 0x03, 0xff, 0xff, 0xff, 0xff, 0x00, 0x02, 0x00, 0x06, 0x04, 0xe9,
+            ])
+            .unwrap();
 
         // when: parsing a reply
         let r = r502.parse_reply();
 
         // then: reply is ok
-        assert_eq!(r.is_some(), true);
+        assert_eq!(r.is_ok(), true);
 
         // and: the reply is correct
         let reply = r.unwrap();
         match reply {
-            Reply::ReadSysPara(ReadSysParaResult { address, confirmation_code: _, system_parameters, checksum: _ }) => {
+            Reply::ReadSysPara(ReadSysParaResult {
+                address,
+                confirmation_code: _,
+                system_parameters,
+                checksum: _,
+            }) => {
                 assert_eq!(address, 0xffffffff);
                 assert_eq!(system_parameters.finger_library_size, 200);
-            },
+            }
             _ => panic!("Expected Reply::ReadSysPara, got something else!"),
         };
     }
@@ -297,29 +285,20 @@ mod tests {
         r502.received.clear();
 
         // when: preparing a VfyPwd command
-        r502.prepare_cmd(Command::VfyPwd { password: 0x00000000 });
+        r502.prepare_cmd(Command::VfyPwd {
+            password: 0x00000000,
+        });
 
         // then: the resulting packet length is ok
         assert_eq!(r502.cmd_buffer.len(), 16);
         // and: the packet is correct
-        assert_eq!(&r502.cmd_buffer[..], &[
-            0xef,
-            0x01,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0x01,
-            0x00,
-            0x07,
-            0x13,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x1b,
-        ]);
+        assert_eq!(
+            &r502.cmd_buffer[..],
+            &[
+                0xef, 0x01, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x07, 0x13, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x1b,
+            ]
+        );
     }
 
     #[test]
@@ -328,40 +307,37 @@ mod tests {
         let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
         r502.cmd_buffer.clear();
         r502.received.clear();
-        *r502.inflight_request.borrow_mut() = Some(Command::VfyPwd { password: 0x00000000 });
+        *r502.inflight_request.borrow_mut() = Some(Command::VfyPwd {
+            password: 0x00000000,
+        });
 
         // and: a reply in the receive buffer
-        r502.received.try_extend_from_slice(&[
-            0xef,
-            0x01,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0x07,
-            0x00,
-            0x03,
-            0x00,
-            0x00,
-            0x0a,
-        ]).unwrap();
+        r502.received
+            .try_extend_from_slice(&[
+                0xef, 0x01, 0xff, 0xff, 0xff, 0xff, 0x07, 0x00, 0x03, 0x00, 0x00, 0x0a,
+            ])
+            .unwrap();
 
         // when: parsing a reply
         let r = r502.parse_reply();
 
         // then: reply is ok
-        assert_eq!(r.is_some(), true);
+        assert_eq!(r.is_ok(), true);
 
         // and: the reply is correct
         let reply = r.unwrap();
         match reply {
-            Reply::VfyPwd(VfyPwdResult { address, confirmation_code, checksum: _ }) => {
+            Reply::VfyPwd(VfyPwdResult {
+                address,
+                confirmation_code,
+                checksum: _,
+            }) => {
                 assert_eq!(address, 0xffffffff);
                 match confirmation_code {
                     PasswordVerificationState::Correct => (),
                     _ => panic!("Expected PasswordConfirmationCode::Correct"),
                 };
-            },
+            }
             _ => panic!("Expected Reply::VfyPwd, got something else!"),
         };
     }
@@ -372,27 +348,17 @@ mod tests {
         let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
         r502.cmd_buffer.clear();
         r502.received.clear();
-        
+
         // when: preparing a GenImg command
         r502.prepare_cmd(Command::GenImg);
 
         // then: the resulting packet length is correct
         assert_eq!(r502.cmd_buffer.len(), 12);
         // and: the packet is correct
-        assert_eq!(&r502.cmd_buffer[..], &[
-            0xef,
-            0x01,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0x01,
-            0x00,
-            0x03,
-            0x01,
-            0x00,
-            0x05,
-        ]);
+        assert_eq!(
+            &r502.cmd_buffer[..],
+            &[0xef, 0x01, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x03, 0x01, 0x00, 0x05,]
+        );
     }
 
     #[test]
@@ -404,37 +370,32 @@ mod tests {
         *r502.inflight_request.borrow_mut() = Some(Command::GenImg);
 
         // and: a reply in the receive buffer
-        r502.received.try_extend_from_slice(&[
-            0xef,
-            0x01,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0x07,
-            0x00,
-            0x03,
-            0x00,
-            0x00,
-            0x0a,
-        ]).unwrap();
+        r502.received
+            .try_extend_from_slice(&[
+                0xef, 0x01, 0xff, 0xff, 0xff, 0xff, 0x07, 0x00, 0x03, 0x00, 0x00, 0x0a,
+            ])
+            .unwrap();
 
         // when: parsing a reply
         let r = r502.parse_reply();
 
         // then: reply is ok
-        assert_eq!(r.is_some(), true);
+        assert_eq!(r.is_ok(), true);
 
         // and: the reply is correct
         let reply = r.unwrap();
         match reply {
-            Reply::GenImg(GenImgResult { address, confirmation_code, checksum: _ }) => {
+            Reply::GenImg(GenImgResult {
+                address,
+                confirmation_code,
+                checksum: _,
+            }) => {
                 assert_eq!(address, 0xffffffff);
                 match confirmation_code {
                     GenImgStatus::Success => (),
                     _ => panic!("Expected GenImgStatus::Success"),
                 };
-            },
+            }
             _ => panic!("Expected Reply::GenImg, got something else!"),
         };
     }
@@ -445,28 +406,17 @@ mod tests {
         let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
         r502.cmd_buffer.clear();
         r502.received.clear();
-        
+
         // when: preparing a GenImg command
         r502.prepare_cmd(Command::Img2Tz { buffer: 1 });
 
         // then: the resulting packet length is correct
         assert_eq!(r502.cmd_buffer.len(), 13);
         // and: the packet is correct
-        assert_eq!(&r502.cmd_buffer[..], &[
-            0xef,
-            0x01,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0x01,
-            0x00,
-            0x04,
-            0x02,
-            0x01,
-            0x00,
-            0x08,
-        ]);
+        assert_eq!(
+            &r502.cmd_buffer[..],
+            &[0xef, 0x01, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x04, 0x02, 0x01, 0x00, 0x08,]
+        );
     }
 
     #[test]
@@ -478,37 +428,32 @@ mod tests {
         *r502.inflight_request.borrow_mut() = Some(Command::Img2Tz { buffer: 1 });
 
         // and: a reply in the receive buffer
-        r502.received.try_extend_from_slice(&[
-            0xef,
-            0x01,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0x07,
-            0x00,
-            0x03,
-            0x00,
-            0x00,
-            0x0a,
-        ]).unwrap();
+        r502.received
+            .try_extend_from_slice(&[
+                0xef, 0x01, 0xff, 0xff, 0xff, 0xff, 0x07, 0x00, 0x03, 0x00, 0x00, 0x0a,
+            ])
+            .unwrap();
 
         // when: parsing a reply
         let r = r502.parse_reply();
 
         // then: reply is ok
-        assert_eq!(r.is_some(), true);
+        assert_eq!(r.is_ok(), true);
 
         // and: the reply is correct
         let reply = r.unwrap();
         match reply {
-            Reply::Img2Tz(Img2TzResult { address, confirmation_code, checksum: _ }) => {
+            Reply::Img2Tz(Img2TzResult {
+                address,
+                confirmation_code,
+                checksum: _,
+            }) => {
                 assert_eq!(address, 0xffffffff);
                 match confirmation_code {
                     Img2TzStatus::Success => (),
                     _ => panic!("Expected Img2TzStatus::Success"),
                 };
-            },
+            }
             _ => panic!("Expected Reply::Img2Tz, got something else!"),
         };
     }
@@ -519,32 +464,24 @@ mod tests {
         let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
         r502.cmd_buffer.clear();
         r502.received.clear();
-        
+
         // when: preparing a GenImg command
-        r502.prepare_cmd(Command::Search { buffer: 1, start_index: 0, end_index: 0xffff });
+        r502.prepare_cmd(Command::Search {
+            buffer: 1,
+            start_index: 0,
+            end_index: 0xffff,
+        });
 
         // then: the resulting packet length is correct
         assert_eq!(r502.cmd_buffer.len(), 17);
         // and: the packet is correct
-        assert_eq!(&r502.cmd_buffer[..], &[
-            0xef,
-            0x01,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0x01,
-            0x00,
-            0x08,
-            0x04,
-            0x01,
-            0x00,
-            0x00,
-            0xff,
-            0xff,
-            0x02,
-            0x0c,
-        ]);
+        assert_eq!(
+            &r502.cmd_buffer[..],
+            &[
+                0xef, 0x01, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x08, 0x04, 0x01, 0x00, 0x00, 0xff,
+                0xff, 0x02, 0x0c,
+            ]
+        );
     }
 
     #[test]
@@ -553,38 +490,36 @@ mod tests {
         let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
         r502.cmd_buffer.clear();
         r502.received.clear();
-        *r502.inflight_request.borrow_mut() = Some(Command::Search { buffer: 1, start_index: 0, end_index: 0xffff });
+        *r502.inflight_request.borrow_mut() = Some(Command::Search {
+            buffer: 1,
+            start_index: 0,
+            end_index: 0xffff,
+        });
 
         // and: a reply in the receive buffer
-        r502.received.try_extend_from_slice(&[
-            0xef,
-            0x01,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0x07,
-            0x00,
-            0x07,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0xff,
-            0x00,
-            0x4a,
-        ]).unwrap();
+        r502.received
+            .try_extend_from_slice(&[
+                0xef, 0x01, 0xff, 0xff, 0xff, 0xff, 0x07, 0x00, 0x07, 0x00, 0x00, 0x00, 0x00, 0xff,
+                0x00, 0x4a,
+            ])
+            .unwrap();
 
         // when: parsing a reply
         let r = r502.parse_reply();
 
         // then: reply is ok
-        assert_eq!(r.is_some(), true);
+        assert_eq!(r.is_ok(), true);
 
         // and: the reply is correct
         let reply = r.unwrap();
         match reply {
-            Reply::Search(SearchResult { address, confirmation_code, match_id, match_score, checksum: _ }) => {
+            Reply::Search(SearchResult {
+                address,
+                confirmation_code,
+                match_id,
+                match_score,
+                checksum: _,
+            }) => {
                 assert_eq!(address, 0xffffffff);
                 match confirmation_code {
                     SearchStatus::Success => (),
@@ -592,7 +527,7 @@ mod tests {
                 };
                 assert_eq!(match_id, 0);
                 assert_eq!(match_score, 255);
-            },
+            }
             _ => panic!("Expected Reply::Search, got something else!"),
         };
     }
@@ -603,30 +538,23 @@ mod tests {
         let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
         r502.cmd_buffer.clear();
         r502.received.clear();
-        
+
         // when: preparing a GenImg command
-        r502.prepare_cmd(Command::LoadChar { buffer: 2, index: 0 });
-    
+        r502.prepare_cmd(Command::LoadChar {
+            buffer: 2,
+            index: 0,
+        });
+
         // then: the resulting packet length is correct
         assert_eq!(r502.cmd_buffer.len(), 15);
         // and: the packet is correct
-        assert_eq!(&r502.cmd_buffer[..], &[
-            0xef,
-            0x01,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0x01,
-            0x00,
-            0x06,
-            0x07,
-            0x02,
-            0x00,
-            0x00,
-            0x00,
-            0x10,
-        ]);
+        assert_eq!(
+            &r502.cmd_buffer[..],
+            &[
+                0xef, 0x01, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x06, 0x07, 0x02, 0x00, 0x00, 0x00,
+                0x10,
+            ]
+        );
     }
 
     #[test]
@@ -635,40 +563,38 @@ mod tests {
         let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
         r502.cmd_buffer.clear();
         r502.received.clear();
-        *r502.inflight_request.borrow_mut() = Some(Command::LoadChar { buffer: 2, index: 0 });
+        *r502.inflight_request.borrow_mut() = Some(Command::LoadChar {
+            buffer: 2,
+            index: 0,
+        });
 
         // and: a reply in the receive buffer
-        r502.received.try_extend_from_slice(&[
-            0xef,
-            0x01,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0x07,
-            0x00,
-            0x03,
-            0x00,
-            0x00,
-            0x0a,
-        ]).unwrap();
+        r502.received
+            .try_extend_from_slice(&[
+                0xef, 0x01, 0xff, 0xff, 0xff, 0xff, 0x07, 0x00, 0x03, 0x00, 0x00, 0x0a,
+            ])
+            .unwrap();
 
         // when: parsing a reply
         let r = r502.parse_reply();
 
         // then: reply is ok
-        assert_eq!(r.is_some(), true);
+        assert_eq!(r.is_ok(), true);
 
         // and: the reply is correct
         let reply = r.unwrap();
         match reply {
-            Reply::LoadChar(LoadCharResult { address, confirmation_code, checksum: _ }) => {
+            Reply::LoadChar(LoadCharResult {
+                address,
+                confirmation_code,
+                checksum: _,
+            }) => {
                 assert_eq!(address, 0xffffffff);
                 match confirmation_code {
                     LoadCharStatus::Success => (),
                     _ => panic!("Expected LoadCharStatus::Success"),
                 };
-            },
+            }
             _ => panic!("Expected Reply::LoadChar, got something else!"),
         };
     }
@@ -679,27 +605,17 @@ mod tests {
         let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
         r502.cmd_buffer.clear();
         r502.received.clear();
-        
+
         // when: preparing a GenImg command
         r502.prepare_cmd(Command::Match);
-    
+
         // then: the resulting packet length is correct
         assert_eq!(r502.cmd_buffer.len(), 12);
         // and: the packet is correct
-        assert_eq!(&r502.cmd_buffer[..], &[
-            0xef,
-            0x01,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0x01,
-            0x00,
-            0x03,
-            0x03,
-            0x00,
-            0x07,
-        ]);
+        assert_eq!(
+            &r502.cmd_buffer[..],
+            &[0xef, 0x01, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x03, 0x03, 0x00, 0x07,]
+        );
     }
 
     #[test]
@@ -711,40 +627,34 @@ mod tests {
         *r502.inflight_request.borrow_mut() = Some(Command::Match);
 
         // and: a reply in the receive buffer
-        r502.received.try_extend_from_slice(&[
-            0xef,
-            0x01,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0x07,
-            0x00,
-            0x05,
-            0x00,
-            0x00,
-            0x32,
-            0x00,
-            0x3e,
-        ]).unwrap();
+        r502.received
+            .try_extend_from_slice(&[
+                0xef, 0x01, 0xff, 0xff, 0xff, 0xff, 0x07, 0x00, 0x05, 0x00, 0x00, 0x32, 0x00, 0x3e,
+            ])
+            .unwrap();
 
         // when: parsing a reply
         let r = r502.parse_reply();
 
         // then: reply is ok
-        assert_eq!(r.is_some(), true);
+        assert_eq!(r.is_ok(), true);
 
         // and: the reply is correct
         let reply = r.unwrap();
         match reply {
-            Reply::Match(MatchResult { address, confirmation_code, match_score, checksum: _ }) => {
+            Reply::Match(MatchResult {
+                address,
+                confirmation_code,
+                match_score,
+                checksum: _,
+            }) => {
                 assert_eq!(address, 0xffffffff);
                 match confirmation_code {
                     MatchStatus::Success => (),
                     _ => panic!("Expected MatchStatus::Success"),
                 };
                 assert_eq!(match_score, 50);
-            },
+            }
             _ => panic!("Expected Reply::Match, got something else!"),
         };
     }

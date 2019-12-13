@@ -1,6 +1,6 @@
-use std::{env, cell::RefCell, time::Duration};
+use hzgrow_r502::{Command, GenImgStatus, MatchStatus, Reply, R502};
 use serialport::{available_ports, open};
-use hzgrow_r502::{R502, Command, Reply, GenImgStatus, MatchStatus};
+use std::{cell::RefCell, env, time::Duration};
 
 mod pc_utils;
 use pc_utils::{SerialReader, SerialWriter};
@@ -24,7 +24,6 @@ fn print_ports() {
     }
 }
 
-
 fn run_test(port_name: &str, library_index: u16) {
     println!("Using port {}", port_name);
     let mut port = open(port_name).unwrap();
@@ -39,7 +38,9 @@ fn run_test(port_name: &str, library_index: u16) {
 
     println!("1. Verifying password");
 
-    let cmd = Command::VfyPwd { password: 0x00000000 };
+    let cmd = Command::VfyPwd {
+        password: 0x00000000,
+    };
     println!("Command: {:#?}", cmd);
     match r502.send_command(cmd) {
         Ok(Reply::VfyPwd(result)) => println!("Reply: {:#?}", result.confirmation_code),
@@ -51,7 +52,10 @@ fn run_test(port_name: &str, library_index: u16) {
 
     println!("Command: {:#?}", Command::ReadSysPara);
     match r502.send_command(Command::ReadSysPara) {
-        Ok(Reply::ReadSysPara(result)) => println!("Password result: {:#?}", result.system_parameters.password_ok()),
+        Ok(Reply::ReadSysPara(result)) => println!(
+            "Password result: {:#?}",
+            result.system_parameters.password_ok()
+        ),
         Err(e) => panic!("Error: {:#?}", e),
         msg => panic!("Unexpected msg: {:#?}", msg),
     };
@@ -60,13 +64,11 @@ fn run_test(port_name: &str, library_index: u16) {
     print!("Command: {:#?}", Command::GenImg);
     loop {
         match r502.send_command(Command::GenImg) {
-            Ok(Reply::GenImg(result)) => {
-                match result.confirmation_code {
-                    GenImgStatus::Success => break,
-                    GenImgStatus::FingerNotDetected => print!("."),
-                    GenImgStatus::ImageNotCaptured => print!("!"),
-                    _ => {},
-                }
+            Ok(Reply::GenImg(result)) => match result.confirmation_code {
+                GenImgStatus::Success => break,
+                GenImgStatus::FingerNotDetected => print!("."),
+                GenImgStatus::ImageNotCaptured => print!("!"),
+                _ => {}
             },
             Err(e) => panic!("Error: {:#?}", e),
             msg => panic!("Unexpected msg: {:#?}", msg),
@@ -78,7 +80,10 @@ fn run_test(port_name: &str, library_index: u16) {
 
     println!("Command: {:#?}", Command::ReadSysPara);
     match r502.send_command(Command::ReadSysPara) {
-        Ok(Reply::ReadSysPara(result)) => println!("Valid image: {:#?}", result.system_parameters.has_valid_image()),
+        Ok(Reply::ReadSysPara(result)) => println!(
+            "Valid image: {:#?}",
+            result.system_parameters.has_valid_image()
+        ),
         Err(e) => panic!("Error: {:#?}", e),
         msg => panic!("Unexpected msg: {:#?}", msg),
     };
@@ -95,7 +100,10 @@ fn run_test(port_name: &str, library_index: u16) {
 
     println!("6. Load reference image");
 
-    let cmd = Command::LoadChar { buffer: 2, index: library_index };
+    let cmd = Command::LoadChar {
+        buffer: 2,
+        index: library_index,
+    };
     println!("Command: {:#?}", cmd);
     match r502.send_command(cmd) {
         Ok(Reply::LoadChar(result)) => println!("Reply: {:#?}", result),
@@ -114,7 +122,7 @@ fn run_test(port_name: &str, library_index: u16) {
                 MatchStatus::NoMatch => println!("No match!"),
                 MatchStatus::PacketError => println!("Something bad happened"),
             };
-        },
+        }
         Err(e) => panic!("Error: {:#?}", e),
         msg => panic!("Unexpected msg: {:#?}", msg),
     };

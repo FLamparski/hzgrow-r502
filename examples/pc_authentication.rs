@@ -1,6 +1,6 @@
-use std::{env, cell::RefCell, time::Duration};
+use hzgrow_r502::{Command, R502};
 use serialport::{available_ports, open};
-use hzgrow_r502::{R502, Command};
+use std::{cell::RefCell, env, time::Duration};
 
 mod pc_utils;
 use pc_utils::{SerialReader, SerialWriter};
@@ -46,7 +46,9 @@ fn run_test(port_name: &str) {
 
     println!("2. Verifying password");
 
-    let cmd = Command::VfyPwd { password: 0x00000000 };
+    let cmd = Command::VfyPwd {
+        password: 0x00000000,
+    };
     println!("Command: {:#?}", cmd);
     match r502.send_command(cmd) {
         Ok(reply) => println!("Reply: {:#?}", reply),
@@ -62,4 +64,3 @@ fn run_test(port_name: &str) {
         Err(e) => println!("Error: {:#?}", e),
     };
 }
-
