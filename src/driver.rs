@@ -157,6 +157,9 @@ where TX: Write<u8>,
             Some(Command::LoadChar { buffer: _, index: _ }) => {
                 Some(Reply::LoadChar(LoadCharResult::from_payload(&self.received[..])))
             },
+            Some(Command::Match) => {
+                Some(Reply::Match(MatchResult::from_payload(&self.received[..])))
+            },
             None => None
         };
     }
@@ -667,6 +670,82 @@ mod tests {
                 };
             },
             _ => panic!("Expected Reply::LoadChar, got something else!"),
+        };
+    }
+
+    #[test]
+    fn test_match_serialisation() {
+        // given: a r502 instance
+        let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
+        r502.cmd_buffer.clear();
+        r502.received.clear();
+        
+        // when: preparing a GenImg command
+        r502.prepare_cmd(Command::Match);
+    
+        // then: the resulting packet length is correct
+        assert_eq!(r502.cmd_buffer.len(), 12);
+        // and: the packet is correct
+        assert_eq!(&r502.cmd_buffer[..], &[
+            0xef,
+            0x01,
+            0xff,
+            0xff,
+            0xff,
+            0xff,
+            0x01,
+            0x00,
+            0x03,
+            0x03,
+            0x00,
+            0x07,
+        ]);
+    }
+
+    #[test]
+    fn test_match_deserialisation() {
+        // given: a r502 instance
+        let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
+        r502.cmd_buffer.clear();
+        r502.received.clear();
+        *r502.inflight_request.borrow_mut() = Some(Command::Match);
+
+        // and: a reply in the receive buffer
+        r502.received.try_extend_from_slice(&[
+            0xef,
+            0x01,
+            0xff,
+            0xff,
+            0xff,
+            0xff,
+            0x07,
+            0x00,
+            0x05,
+            0x00,
+            0x00,
+            0x32,
+            0x00,
+            0x3e,
+        ]).unwrap();
+
+        // when: parsing a reply
+        let r = r502.parse_reply();
+
+        // then: reply is ok
+        assert_eq!(r.is_some(), true);
+
+        // and: the reply is correct
+        let reply = r.unwrap();
+        match reply {
+            Reply::Match(MatchResult { address, confirmation_code, match_score, checksum: _ }) => {
+                assert_eq!(address, 0xffffffff);
+                match confirmation_code {
+                    MatchStatus::Success => (),
+                    _ => panic!("Expected MatchStatus::Success"),
+                };
+                assert_eq!(match_score, 50);
+            },
+            _ => panic!("Expected Reply::Match, got something else!"),
         };
     }
 }
