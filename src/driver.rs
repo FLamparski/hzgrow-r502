@@ -6,7 +6,7 @@ use core::cell::RefCell;
 
 use crate::commands::Command;
 use crate::responses::*;
-use crate::utils::{FromPayload, CommandWriter, ToPayload};
+use crate::utils::{FromPayload, CommandWriter, ToPayload, Error};
 
 const REPLY_HEADER_LENGTH: u16 = 9;
 
@@ -49,29 +49,43 @@ where TX: Write<u8>,
     }
 
     /// Sends a command `cmd` to the R502 and then blocks waiting for the reply.
-    /// The return value is either a response from the R502 or an `Err(())`. Uses blocking USART
+    /// The return value is either a response from the R502 or an error. Uses blocking USART
     /// API.
     /// 
-    /// TODO: Add better error results.
-    pub fn send_command(&mut self, cmd: Command) -> Result<Reply, ()> {
+    /// # Errors
+    /// 
+    /// ## `Error::WriteError(err)`
+    /// Returned if the command could not be written to the serial port.
+    /// Wraps the underlying error.
+    /// 
+    /// ## `Error::ReadError(err)`
+    /// Returned if the reply could not be read from the serial port.
+    /// Wraps the underlying error.
+    /// 
+    /// ## `Error::RecvPacketTooShort`
+    /// Returned if the reply was only partially received.
+    /// 
+    /// ## `Error::RecvWrongReplyType`
+    /// Returned if the response packet was not a reply.
+    pub fn send_command(&mut self, cmd: Command) -> Result<Reply, Error<TX::Error, RX::Error>> {
         self.cmd_buffer.clear();
         self.received.clear();
         self.prepare_cmd(cmd);
 
         let cmd_bytes = &self.cmd_buffer[..];
         for byte in cmd_bytes {
-            block!(self.tx.write(*byte)).ok();
-        }
-
-        block!(self.tx.flush()).ok();
-
-        if self.read_reply().is_some() {
-            if let Some(reply) = self.parse_reply() {
-                return Result::Ok(reply);
+            match block!(self.tx.write(*byte)) {
+                Err(e) => return Err(Error::WriteError(e)),
+                Ok(..) => {},
             }
         }
 
-        return Result::Err(());
+        match block!(self.tx.flush()) {
+            Err(e) => return Err(Error::WriteError(e)),
+            Ok(..) => {},
+        }
+
+        return self.read_reply().and_then(|_| self.parse_reply());
     }
 
     fn prepare_cmd(&mut self, cmd: Command) {
@@ -98,69 +112,67 @@ where TX: Write<u8>,
         return checksum;
     }
 
-    fn read_reply(&mut self) -> Option<u16> {
+    fn read_reply(&mut self) -> Result<u16, Error<TX::Error, RX::Error>> {
         // At first, we don't know the full packet size, so read in the
         // first 9 bytes of the packet header.
         for _ in 0..REPLY_HEADER_LENGTH {
-            if let Some(byte) = block!(self.rx.read()).ok() {
-                self.received.push(byte);
-            } else {
-                return None;
+            match block!(self.rx.read()) {
+                Ok(word) => self.received.push(word),
+                Err(error) => return Err(Error::RecvReadError(error)),
             }
         }
 
         let length = BigEndian::read_u16(&self.received[7..9]);
         for _ in 0..length {
-            if let Some(byte) = block!(self.rx.read()).ok() {
-                self.received.push(byte);
-            } else {
-                return None;
+            match block!(self.rx.read()) {
+                Ok(word) => self.received.push(word),
+                Err(error) => return Err(Error::RecvReadError(error)),
             }
         }
 
-        return Some(REPLY_HEADER_LENGTH + length);
+        return Ok(REPLY_HEADER_LENGTH + length);
     }
 
-    fn parse_reply(&self) -> Option<Reply> {
+    fn parse_reply(&self) -> Result<Reply, Error<TX::Error, RX::Error>> {
         // Packet ID is in byte 6
         if self.received.len() < 7 {
-            return None;
+            return Err(Error::RecvPacketTooShort);
         }
 
         // We have no business reading anything if there's no request in flight
         let inflight = self.inflight_request.borrow();
         if inflight.is_none() {
-            return None;
+            return Err(Error::RecvUnsolicitedReply);
         }
 
         // We are looking for a response packet
         if self.received[6] != 0x07 {
-            return None;
+            return Err(Error::RecvWrongReplyType);
         }
 
         return match *inflight {
             Some(Command::ReadSysPara) => {
-                Some(Reply::ReadSysPara(ReadSysParaResult::from_payload(&self.received[..])))
+                Ok(Reply::ReadSysPara(ReadSysParaResult::from_payload(&self.received[..])))
             },
             Some(Command::VfyPwd { password: _ }) => {
-                Some(Reply::VfyPwd(VfyPwdResult::from_payload(&self.received[..])))
+                Ok(Reply::VfyPwd(VfyPwdResult::from_payload(&self.received[..])))
             },
             Some(Command::GenImg) => {
-                Some(Reply::GenImg(GenImgResult::from_payload(&self.received[..])))
+                Ok(Reply::GenImg(GenImgResult::from_payload(&self.received[..])))
             },
             Some(Command::Img2Tz { buffer: _ }) => {
-                Some(Reply::Img2Tz(Img2TzResult::from_payload(&self.received[..])))
+                Ok(Reply::Img2Tz(Img2TzResult::from_payload(&self.received[..])))
             },
             Some(Command::Search { buffer: _, start_index: _, end_index: _ }) => {
-                Some(Reply::Search(SearchResult::from_payload(&self.received[..])))
+                Ok(Reply::Search(SearchResult::from_payload(&self.received[..])))
             },
             Some(Command::LoadChar { buffer: _, index: _ }) => {
-                Some(Reply::LoadChar(LoadCharResult::from_payload(&self.received[..])))
+                Ok(Reply::LoadChar(LoadCharResult::from_payload(&self.received[..])))
             },
             Some(Command::Match) => {
-                Some(Reply::Match(MatchResult::from_payload(&self.received[..])))
+                Ok(Reply::Match(MatchResult::from_payload(&self.received[..])))
             },
-            None => None
+            None => panic!("Should not be reached"),
         };
     }
 }
@@ -276,7 +288,7 @@ mod tests {
         let r = r502.parse_reply();
 
         // then: reply is ok
-        assert_eq!(r.is_some(), true);
+        assert_eq!(r.is_ok(), true);
 
         // and: the reply is correct
         let reply = r.unwrap();
@@ -350,7 +362,7 @@ mod tests {
         let r = r502.parse_reply();
 
         // then: reply is ok
-        assert_eq!(r.is_some(), true);
+        assert_eq!(r.is_ok(), true);
 
         // and: the reply is correct
         let reply = r.unwrap();
@@ -423,7 +435,7 @@ mod tests {
         let r = r502.parse_reply();
 
         // then: reply is ok
-        assert_eq!(r.is_some(), true);
+        assert_eq!(r.is_ok(), true);
 
         // and: the reply is correct
         let reply = r.unwrap();
@@ -497,7 +509,7 @@ mod tests {
         let r = r502.parse_reply();
 
         // then: reply is ok
-        assert_eq!(r.is_some(), true);
+        assert_eq!(r.is_ok(), true);
 
         // and: the reply is correct
         let reply = r.unwrap();
@@ -579,7 +591,7 @@ mod tests {
         let r = r502.parse_reply();
 
         // then: reply is ok
-        assert_eq!(r.is_some(), true);
+        assert_eq!(r.is_ok(), true);
 
         // and: the reply is correct
         let reply = r.unwrap();
@@ -657,7 +669,7 @@ mod tests {
         let r = r502.parse_reply();
 
         // then: reply is ok
-        assert_eq!(r.is_some(), true);
+        assert_eq!(r.is_ok(), true);
 
         // and: the reply is correct
         let reply = r.unwrap();
@@ -732,7 +744,7 @@ mod tests {
         let r = r502.parse_reply();
 
         // then: reply is ok
-        assert_eq!(r.is_some(), true);
+        assert_eq!(r.is_ok(), true);
 
         // and: the reply is correct
         let reply = r.unwrap();

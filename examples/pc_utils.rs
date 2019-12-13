@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use serialport::prelude::*;
-use embedded_hal::{serial::{Read, Write}};
+use embedded_hal::serial::{Read, Write};
 
 // We're cheating here and will use the host OS's serial port
 // as our UART, and for that we have to implement the read/write
