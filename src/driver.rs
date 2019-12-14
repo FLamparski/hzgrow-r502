@@ -177,6 +177,9 @@ where
                 &self.received[..],
             ))),
             Some(Command::Match) => Ok(Reply::Match(MatchResult::from_payload(&self.received[..]))),
+            Some(Command::TemplateNum) => Ok(Reply::TemplateNum(TemplateNumResult::from_payload(
+                &self.received[..],
+            ))),
             None => panic!("Should not be reached"),
         };
     }
@@ -656,6 +659,66 @@ mod tests {
                 assert_eq!(match_score, 50);
             }
             _ => panic!("Expected Reply::Match, got something else!"),
+        };
+    }
+
+    #[test]
+    fn test_template_num_serialisation() {
+        // given: a r502 instance
+        let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
+        r502.cmd_buffer.clear();
+        r502.received.clear();
+
+        // when: preparing a GenImg command
+        r502.prepare_cmd(Command::TemplateNum);
+
+        // then: the resulting packet length is correct
+        assert_eq!(r502.cmd_buffer.len(), 12);
+        // and: the packet is correct
+        assert_eq!(
+            &r502.cmd_buffer[..],
+            &[0xef, 0x01, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x03, 0x1d, 0x00, 0x21,]
+        );
+    }
+
+    #[test]
+    fn test_template_num_deserialisation() {
+        // given: a r502 instance
+        let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
+        r502.cmd_buffer.clear();
+        r502.received.clear();
+        *r502.inflight_request.borrow_mut() = Some(Command::TemplateNum);
+
+        // and: a reply in the receive buffer
+        r502.received
+            .try_extend_from_slice(&[
+                0xef, 0x01, 0xff, 0xff, 0xff, 0xff, 0x07, 0x00, 0x05, 0x00, 0x00, 0x03, 0x00, 0x0f,
+            ])
+            .unwrap();
+
+        // when: parsing a reply
+        let r = r502.parse_reply();
+
+        // then: reply is ok
+        assert_eq!(r.is_ok(), true);
+
+        // and: the reply is correct
+        let reply = r.unwrap();
+        match reply {
+            Reply::TemplateNum(TemplateNumResult {
+                address,
+                confirmation_code,
+                template_num,
+                checksum: _,
+            }) => {
+                assert_eq!(address, 0xffffffff);
+                match confirmation_code {
+                    TemplateNumStatus::Success => (),
+                    _ => panic!("Expected TemplateNumStatus::Success"),
+                };
+                assert_eq!(template_num, 3);
+            }
+            _ => panic!("Expected Reply::TemplateNum, got something else!"),
         };
     }
 }

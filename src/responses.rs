@@ -24,6 +24,9 @@ pub enum Reply {
 
     /// Contains result of matching two fingers against each other
     Match(MatchResult),
+
+    /// Contains result of retrieving the next valid library index
+    TemplateNum(TemplateNumResult),
 }
 
 /// Result struct for the `ReadSysPara` call
@@ -201,6 +204,33 @@ impl FromPayload for MatchResult {
             address: BigEndian::read_u32(&payload[2..6]),
             confirmation_code: MatchStatus::from(payload[9]),
             match_score: BigEndian::read_u16(&payload[10..12]),
+            checksum: BigEndian::read_u16(&payload[12..14]),
+        };
+    }
+}
+
+/// Contains the next available template number, or index in the library
+/// at which a fingerprint can be enrolled.
+#[derive(Debug)]
+pub struct TemplateNumResult {
+    /// Address of the R502 that sent this message
+    pub address: u32,
+
+    /// Response code
+    pub confirmation_code: TemplateNumStatus,
+
+    /// Valid template number
+    pub template_num: u16,
+
+    pub checksum: u16,
+}
+
+impl FromPayload for TemplateNumResult {
+    fn from_payload(payload: &[u8]) -> Self {
+        return Self {
+            address: BigEndian::read_u32(&payload[2..6]),
+            confirmation_code: TemplateNumStatus::from(payload[9]),
+            template_num: BigEndian::read_u16(&payload[10..12]),
             checksum: BigEndian::read_u16(&payload[12..14]),
         };
     }
@@ -439,6 +469,25 @@ impl MatchStatus {
             0x01 => Self::PacketError,
             0x08 => Self::NoMatch,
             _ => panic!("Invalid MatchStatus: {:02x}", byte),
+        };
+    }
+}
+
+// `TemplateNum` status code
+#[derive(Debug)]
+pub enum TemplateNumStatus {
+    /// Request was successful
+    Success,
+    /// Error reading packet from the host
+    PacketError,
+}
+
+impl TemplateNumStatus {
+    fn from(byte: u8) -> Self {
+        return match byte {
+            0x00 => Self::Success,
+            0x01 => Self::PacketError,
+            _ => panic!("Invalid TemplateNumStatus: {:02x}", byte),
         };
     }
 }
