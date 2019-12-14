@@ -1,8 +1,8 @@
 use crate::utils::{CommandWriter, ToPayload};
 
-/// Commands that one can send to the R502. Command naming and some field names are taken from the R502 datasheet.
+/// Commands that one can send to the R502.
 ///
-/// [Datasheet link](https://www.dropbox.com/sh/epucei8lmoz7xpp/AAAmon04b1DiSOeh1q4nAhzAa?dl=0&preview=R502+fingerprint+module+user+manual-V1.2.pdf) -
+/// Command naming and some field names are taken from the R502 datasheet: [Datasheet link](https://www.dropbox.com/sh/epucei8lmoz7xpp/AAAmon04b1DiSOeh1q4nAhzAa?dl=0&preview=R502+fingerprint+module+user+manual-V1.2.pdf) -
 /// yes, it actually is hosted on Dropbox.
 #[derive(Debug)]
 pub enum Command {
@@ -60,6 +60,9 @@ pub enum Command {
     /// to match a new fingerprint against a known template, to verify that the correct
     /// finger is placed on the reader.
     Match,
+
+    /// Returns the next valid index at which a new fingerprint can be enrolled.
+    TemplateNum,
 }
 
 impl ToPayload for Command {
@@ -172,6 +175,19 @@ impl ToPayload for Command {
                 writer.write_cmd_bytes(&[0x01]);
                 writer.write_cmd_bytes(&[0x00, 0x03]);
                 writer.write_cmd_bytes(&[0x03]);
+            }
+
+            // Required packet:
+            // headr  | 0xEF 0x01 [2]
+            // addr   | cmd.address [4]
+            // ident  | 0x01 [1]
+            // length | 0x00 0x03 [2]
+            // instr  | 0x1D [1]
+            // chksum | checksum [2]
+            Self::TemplateNum => {
+                writer.write_cmd_bytes(&[0x01]);
+                writer.write_cmd_bytes(&[0x00, 0x03]);
+                writer.write_cmd_bytes(&[0x1D]);
             }
         }
     }
