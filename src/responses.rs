@@ -27,6 +27,9 @@ pub enum Reply {
 
     /// Contains result of retrieving the next valid library index
     TemplateNum(TemplateNumResult),
+
+    /// Contains result of creating a fingerprint _template_
+    RegModel(RegModelResult),
 }
 
 /// Result struct for the `ReadSysPara` call
@@ -232,6 +235,28 @@ impl FromPayload for TemplateNumResult {
             confirmation_code: TemplateNumStatus::from(payload[9]),
             template_num: BigEndian::read_u16(&payload[10..12]),
             checksum: BigEndian::read_u16(&payload[12..14]),
+        };
+    }
+}
+
+/// Result of generating the fingerprint template for enrollment.
+#[derive(Debug)]
+pub struct RegModelResult {
+    /// Address of the R502 that sent this message
+    pub address: u32,
+
+    /// Response code
+    pub confirmation_code: RegModelStatus,
+
+    pub checksum: u16,
+}
+
+impl FromPayload for RegModelResult {
+    fn from_payload(payload: &[u8]) -> Self {
+        return Self {
+            address: BigEndian::read_u32(&payload[2..6]),
+            confirmation_code: RegModelStatus::from(payload[9]),
+            checksum: BigEndian::read_u16(&payload[10..12]),
         };
     }
 }
@@ -491,3 +516,30 @@ impl TemplateNumStatus {
         };
     }
 }
+
+// `RegModel` status code
+#[derive(Debug)]
+pub enum RegModelStatus {
+    /// Request was successful
+    Success,
+    /// Error reading packet from the host
+    PacketError,
+    /// Error processing the _character files_.
+    ///
+    /// One likely explanation for this is that the finger data
+    /// in the two _character buffers_ does not look like it
+    /// comes from the same finger.
+    ProcessingError,
+}
+
+impl RegModelStatus {
+    fn from(byte: u8) -> Self {
+        return match byte {
+            0x00 => Self::Success,
+            0x01 => Self::PacketError,
+            0x0a => Self::ProcessingError,
+            _ => panic!("Invalid RegModelStatus: {:02x}", byte),
+        };
+    }
+}
+

@@ -63,6 +63,11 @@ pub enum Command {
 
     /// Returns the next valid index at which a new fingerprint can be enrolled.
     TemplateNum,
+
+    /// Combines fingerprint data stored in two _character buffers_ into a new _template_,
+    /// which is returned into _both_ character buffers. This is part of the enrollment
+    /// process. For this to work, both buffers need to contain data from the same finger.
+    RegModel,
 }
 
 impl ToPayload for Command {
@@ -188,6 +193,19 @@ impl ToPayload for Command {
                 writer.write_cmd_bytes(&[0x01]);
                 writer.write_cmd_bytes(&[0x00, 0x03]);
                 writer.write_cmd_bytes(&[0x1D]);
+            }
+
+            // Required packet:
+            // headr  | 0xEF 0x01 [2]
+            // addr   | cmd.address [4]
+            // ident  | 0x01 [1]
+            // length | 0x00 0x03 [2]
+            // instr  | 0x05 [1]
+            // chksum | checksum [2]
+            Self::RegModel => {
+                writer.write_cmd_bytes(&[0x01]);
+                writer.write_cmd_bytes(&[0x00, 0x03]);
+                writer.write_cmd_bytes(&[0x05]);
             }
         }
     }
