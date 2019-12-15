@@ -59,7 +59,8 @@ pub use crate::commands::Command;
 pub use crate::driver::R502;
 pub use crate::responses::{
     GenImgResult, GenImgStatus, Img2TzResult, Img2TzStatus, LoadCharResult, LoadCharStatus,
-    MatchResult, MatchStatus, PasswordVerificationState, ReadSysParaResult, Reply, SearchResult,
-    SearchStatus, SystemParameters, TemplateNumResult, TemplateNumStatus, VfyPwdResult,
+    MatchResult, MatchStatus, PasswordVerificationState, ReadSysParaResult, RegModelResult,
+    RegModelStatus, Reply, SearchResult, SearchStatus, SystemParameters, TemplateNumResult,
+    TemplateNumStatus, VfyPwdResult,
 };
 pub use crate::utils::Error;
