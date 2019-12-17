@@ -2,6 +2,17 @@ use crate::utils::FromPayload;
 use byteorder::{BigEndian, ByteOrder};
 
 /// Responses to commands returned by the R502. Names are the same as commands.
+/// 
+/// ## Status codes
+/// The R502 datasheet lists a number of _confirmation codes_. These status codes
+/// are not exactly unique to each command, but each possible type of error
+/// has its own status code. Which is nice, however the device will _also_
+/// happily use the `0x01` status code, aka `PacketError`, to indicate that
+/// the request was unauthorised as well as malformed.
+/// 
+/// Since the driver does not, as a rule, send malformed requests, you can assume
+/// that most `PacketError`s are actually Unauthorised errors. However, you may
+/// also want to check your wiring in case the packet gets corrupted along the way.
 #[derive(Debug)]
 pub enum Reply {
     /// Contains system status and configuration information
@@ -30,6 +41,12 @@ pub enum Reply {
 
     /// Contains result of creating a fingerprint _template_
     RegModel(RegModelResult),
+
+    /// Contains result of storing a fingerprint _template_ into the library
+    Store(StoreResult),
+
+    /// Contains result of deleting an enrolled fingerprint
+    DeletChar(DeletCharResult),
 }
 
 /// Result struct for the `ReadSysPara` call
@@ -256,6 +273,50 @@ impl FromPayload for RegModelResult {
         return Self {
             address: BigEndian::read_u32(&payload[2..6]),
             confirmation_code: RegModelStatus::from(payload[9]),
+            checksum: BigEndian::read_u16(&payload[10..12]),
+        };
+    }
+}
+
+/// Result of storing a fingerprint template.
+#[derive(Debug)]
+pub struct StoreResult {
+    /// Address of the R502 that sent this message
+    pub address: u32,
+
+    /// Response code
+    pub confirmation_code: StoreStatus,
+
+    pub checksum: u16,
+}
+
+impl FromPayload for StoreResult {
+    fn from_payload(payload: &[u8]) -> Self {
+        return Self {
+            address: BigEndian::read_u32(&payload[2..6]),
+            confirmation_code: StoreStatus::from(payload[9]),
+            checksum: BigEndian::read_u16(&payload[10..12]),
+        };
+    }
+}
+
+/// Result of deleting a fingerprint template.
+#[derive(Debug)]
+pub struct DeletCharResult {
+    /// Address of the R502 that sent this message
+    pub address: u32,
+
+    /// Response code
+    pub confirmation_code: DeletCharStatus,
+
+    pub checksum: u16,
+}
+
+impl FromPayload for DeletCharResult {
+    fn from_payload(payload: &[u8]) -> Self {
+        return Self {
+            address: BigEndian::read_u32(&payload[2..6]),
+            confirmation_code: DeletCharStatus::from(payload[9]),
             checksum: BigEndian::read_u16(&payload[10..12]),
         };
     }
@@ -543,3 +604,54 @@ impl RegModelStatus {
     }
 }
 
+// `Store` status code
+#[derive(Debug)]
+pub enum StoreStatus {
+    /// Request was successful
+    Success,
+    /// Error reading packet from the host
+    PacketError,
+    /// Index given was out of available range
+    IndexOutOfRange,
+    /// "Error when writing to Flash".
+    /// 
+    /// It is unclear when this would happen.
+    WriteError,
+}
+
+impl StoreStatus {
+    fn from(byte: u8) -> Self {
+        return match byte {
+            0x00 => Self::Success,
+            0x01 => Self::PacketError,
+            0x0b => Self::IndexOutOfRange,
+            0x18 => Self::WriteError,
+            _ => panic!("Invalid StoreStatus: {:02x}", byte),
+        };
+    }
+}
+
+// `DeletChar` status code
+#[derive(Debug)]
+pub enum DeletCharStatus {
+    /// Request was successful
+    Success,
+    /// Error reading packet from the host
+    PacketError,
+    /// Failed to delete the fingerprint template.
+    ///
+    /// One likely explanation is that the template is not,
+    /// in fact, there.
+    DeleteFailed,
+}
+
+impl DeletCharStatus {
+    fn from(byte: u8) -> Self {
+        return match byte {
+            0x00 => Self::Success,
+            0x01 => Self::PacketError,
+            0x10 => Self::DeleteFailed,
+            _ => panic!("Invalid DeletCharStatus: {:02x}", byte),
+        };
+    }
+}

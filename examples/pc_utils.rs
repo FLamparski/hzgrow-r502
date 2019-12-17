@@ -23,7 +23,6 @@ impl Read<u8> for SerialReader<'_> {
                     }
                 }
                 Err(e) => {
-                    println!("Error: {:#?}", e);
                     return Err(nb::Error::from(e));
                 }
             };

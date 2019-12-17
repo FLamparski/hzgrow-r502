@@ -1,4 +1,4 @@
-use hzgrow_r502::{Command, GenImgStatus, MatchStatus, Reply, R502};
+use hzgrow_r502::{Command, GenImgStatus, MatchStatus, LoadCharResult, LoadCharStatus, Reply, R502};
 use serialport::{available_ports, open};
 use std::{cell::RefCell, env, time::Duration};
 
@@ -106,7 +106,8 @@ fn run_test(port_name: &str, library_index: u16) {
     };
     println!("Command: {:#?}", cmd);
     match r502.send_command(cmd) {
-        Ok(Reply::LoadChar(result)) => println!("Reply: {:#?}", result),
+        Ok(Reply::LoadChar(LoadCharResult { confirmation_code: LoadCharStatus::Success, address: _, checksum: _ })) => println!("OK"),
+        Ok(Reply::LoadChar(LoadCharResult { confirmation_code, address: _, checksum: _ })) => panic!("Error loading reference data: {:#?}", confirmation_code),
         Err(e) => panic!("Error: {:#?}", e),
         msg => panic!("Unexpected msg: {:#?}", msg),
     };

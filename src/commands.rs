@@ -68,6 +68,31 @@ pub enum Command {
     /// which is returned into _both_ character buffers. This is part of the enrollment
     /// process. For this to work, both buffers need to contain data from the same finger.
     RegModel,
+
+    /// Stores a fingerprint template from the given buffer into the library.
+    /// 
+    /// **Note:** This will allow you to overwrite an existing fingerprint template.
+    /// Use with caution, and invoke `TemplateNum` first to get the next free index.
+    Store {
+        /// Which _character buffer_ to read the fingerprint template from (there are 2).
+        ///
+        /// **Note:** The buffers are named **1** and **2**. Any other value defaults to 2.
+        /// Also note that it shouldn't really matter which buffer you use when enrolling, since
+        /// `RegModel` will return its result into both buffers.
+        buffer: u8,
+
+        /// Which index in the library to store the fingerprint template into.
+        index: u16,
+    },
+
+    /// Deletes enrolled fingerprint templates starting from the given index.
+    DeletChar {
+        /// Index of the fingerprint template in the library to delete.
+        start_index: u16,
+
+        /// Number of templates to delete starting from the given index
+        num_to_delete: u16,
+    },
 }
 
 impl ToPayload for Command {
@@ -206,6 +231,40 @@ impl ToPayload for Command {
                 writer.write_cmd_bytes(&[0x01]);
                 writer.write_cmd_bytes(&[0x00, 0x03]);
                 writer.write_cmd_bytes(&[0x05]);
+            }
+
+            // Required packet:
+            // headr  | 0xEF 0x01 [2]
+            // addr   | cmd.address [4]
+            // ident  | 0x01 [1]
+            // length | 0x00 0x06 [2]
+            // instr  | 0x06 [1]
+            // bufid  | buffer [1]
+            // index  | index [2]
+            // chksum | checksum [2]
+            Self::Store { buffer, index } => {
+                writer.write_cmd_bytes(&[0x01]);
+                writer.write_cmd_bytes(&[0x00, 0x06]);
+                writer.write_cmd_bytes(&[0x06]);
+                writer.write_cmd_bytes(&[*buffer]);
+                writer.write_cmd_bytes(&index.to_be_bytes()[..]);
+            }
+
+            // Required packet:
+            // headr  | 0xEF 0x01 [2]
+            // addr   | cmd.address [4]
+            // ident  | 0x01 [1]
+            // length | 0x00 0x07 [2]
+            // instr  | 0x0c [1]
+            // index  | index [2]
+            // ndelet | num_to_delete [2]
+            // chksum | checksum [2]
+            Self::DeletChar { start_index, num_to_delete } => {
+                writer.write_cmd_bytes(&[0x01]);
+                writer.write_cmd_bytes(&[0x00, 0x07]);
+                writer.write_cmd_bytes(&[0x0c]);
+                writer.write_cmd_bytes(&start_index.to_be_bytes()[..]);
+                writer.write_cmd_bytes(&num_to_delete.to_be_bytes()[..]);
             }
         }
     }

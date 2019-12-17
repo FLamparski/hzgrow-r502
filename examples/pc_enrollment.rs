@@ -87,6 +87,13 @@ fn enroll_to_id(port_name: &str, index: u16) {
         Err(e) => panic!("Error: {:#?}", e),
         msg => panic!("Unexpected msg: {:#?}", msg),
     };
+
+    println!("Saving the template");
+    match r502.send_command(Command::Store { index: index, buffer: 1 }) {
+        Ok(Reply::Store(result)) => println!("Reply: {:#?}", result),
+        Err(e) => panic!("Error: {:#?}", e),
+        msg => panic!("Unexpected msg: {:#?}", msg),
+    };
 }
 
 fn get_configured_serial_port(port_name: &str) -> serialport::Result<Box<dyn SerialPort>> {

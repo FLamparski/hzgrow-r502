@@ -61,6 +61,6 @@ pub use crate::responses::{
     GenImgResult, GenImgStatus, Img2TzResult, Img2TzStatus, LoadCharResult, LoadCharStatus,
     MatchResult, MatchStatus, PasswordVerificationState, ReadSysParaResult, RegModelResult,
     RegModelStatus, Reply, SearchResult, SearchStatus, SystemParameters, TemplateNumResult,
-    TemplateNumStatus, VfyPwdResult,
+    TemplateNumStatus, VfyPwdResult, StoreResult, StoreStatus, DeletCharResult, DeletCharStatus,
 };
 pub use crate::utils::Error;
