@@ -559,7 +559,7 @@ impl MatchStatus {
     }
 }
 
-// `TemplateNum` status code
+/// `TemplateNum` status code
 #[derive(Debug)]
 pub enum TemplateNumStatus {
     /// Request was successful
@@ -578,7 +578,7 @@ impl TemplateNumStatus {
     }
 }
 
-// `RegModel` status code
+/// `RegModel` status code
 #[derive(Debug)]
 pub enum RegModelStatus {
     /// Request was successful
@@ -604,7 +604,7 @@ impl RegModelStatus {
     }
 }
 
-// `Store` status code
+/// `Store` status code
 #[derive(Debug)]
 pub enum StoreStatus {
     /// Request was successful
@@ -631,7 +631,7 @@ impl StoreStatus {
     }
 }
 
-// `DeletChar` status code
+/// `DeletChar` status code
 #[derive(Debug)]
 pub enum DeletCharStatus {
     /// Request was successful
