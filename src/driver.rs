@@ -154,26 +154,19 @@ where
             Some(Command::ReadSysPara) => Ok(Reply::ReadSysPara(ReadSysParaResult::from_payload(
                 &self.received[..],
             ))),
-            Some(Command::VfyPwd { password: _ }) => Ok(Reply::VfyPwd(VfyPwdResult::from_payload(
+            Some(Command::VfyPwd { .. }) => Ok(Reply::VfyPwd(VfyPwdResult::from_payload(
                 &self.received[..],
             ))),
             Some(Command::GenImg) => Ok(Reply::GenImg(GenImgResult::from_payload(
                 &self.received[..],
             ))),
-            Some(Command::Img2Tz { buffer: _ }) => Ok(Reply::Img2Tz(Img2TzResult::from_payload(
+            Some(Command::Img2Tz { .. }) => Ok(Reply::Img2Tz(Img2TzResult::from_payload(
                 &self.received[..],
             ))),
-            Some(Command::Search {
-                buffer: _,
-                start_index: _,
-                end_index: _,
-            }) => Ok(Reply::Search(SearchResult::from_payload(
+            Some(Command::Search { .. }) => Ok(Reply::Search(SearchResult::from_payload(
                 &self.received[..],
             ))),
-            Some(Command::LoadChar {
-                buffer: _,
-                index: _,
-            }) => Ok(Reply::LoadChar(LoadCharResult::from_payload(
+            Some(Command::LoadChar { .. }) => Ok(Reply::LoadChar(LoadCharResult::from_payload(
                 &self.received[..],
             ))),
             Some(Command::Match) => Ok(Reply::Match(MatchResult::from_payload(&self.received[..]))),
@@ -181,6 +174,12 @@ where
                 &self.received[..],
             ))),
             Some(Command::RegModel) => Ok(Reply::RegModel(RegModelResult::from_payload(
+                &self.received[..],
+            ))),
+            Some(Command::Store { .. }) => Ok(Reply::Store(StoreResult::from_payload(
+                &self.received[..],
+            ))),
+            Some(Command::DeletChar { .. }) => Ok(Reply::DeletChar(DeletCharResult::from_payload(
                 &self.received[..],
             ))),
             None => panic!("Should not be reached"),
@@ -780,6 +779,155 @@ mod tests {
                 };
             }
             _ => panic!("Expected Reply::RegModel, got something else!"),
+        };
+    }
+
+    #[test]
+    fn test_store_serialisation() {
+        // given: a r502 instance
+        let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
+        r502.cmd_buffer.clear();
+        r502.received.clear();
+
+        // when: preparing a GenImg command
+        r502.prepare_cmd(Command::Store { buffer: 1, index: 4 });
+
+        // then: the resulting packet length is correct
+        assert_eq!(r502.cmd_buffer.len(), 15);
+        // and: the packet is correct
+        assert_eq!(
+            &r502.cmd_buffer[..],
+            &[
+                0xef,
+                0x01,
+                0xff,
+                0xff,
+                0xff,
+                0xff,
+                0x01,
+                0x00,
+                0x06,
+                0x06,
+                0x01,
+                0x00,
+                0x04,
+                0x00,
+                0x12,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_store_deserialisation() {
+        // given: a r502 instance
+        let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
+        r502.cmd_buffer.clear();
+        r502.received.clear();
+        *r502.inflight_request.borrow_mut() = Some(Command::Store { index: 1, buffer: 1});
+
+        // and: a reply in the receive buffer
+        r502.received
+            .try_extend_from_slice(&[
+                0xef, 0x01, 0xff, 0xff, 0xff, 0xff, 0x07, 0x00, 0x03, 0x00, 0x00, 0x0a,
+            ])
+            .unwrap();
+
+        // when: parsing a reply
+        let r = r502.parse_reply();
+
+        // then: reply is ok
+        assert_eq!(r.is_ok(), true);
+
+        // and: the reply is correct
+        let reply = r.unwrap();
+        match reply {
+            Reply::Store(StoreResult {
+                address,
+                confirmation_code,
+                checksum: _,
+            }) => {
+                assert_eq!(address, 0xffffffff);
+                match confirmation_code {
+                    StoreStatus::Success => (),
+                    _ => panic!("Expected StoreStatus::Success"),
+                };
+            }
+            _ => panic!("Expected Reply::Store, got something else!"),
+        };
+    }
+
+    #[test]
+    fn test_delet_char_serialisation() {
+        // given: a r502 instance
+        let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
+        r502.cmd_buffer.clear();
+        r502.received.clear();
+
+        // when: preparing a GenImg command
+        r502.prepare_cmd(Command::DeletChar { start_index: 4, num_to_delete: 1 });
+
+        // then: the resulting packet length is correct
+        assert_eq!(r502.cmd_buffer.len(), 16);
+        // and: the packet is correct
+        assert_eq!(
+            &r502.cmd_buffer[..],
+            &[
+                0xef,
+                0x01,
+                0xff,
+                0xff,
+                0xff,
+                0xff,
+                0x01,
+                0x00,
+                0x07,
+                0x0c,
+                0x00,
+                0x04,
+                0x00,
+                0x01,
+                0x00,
+                0x19,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_delet_char_deserialisation() {
+        // given: a r502 instance
+        let mut r502 = R502::new(TestTx, TestRx, 0xffffffff);
+        r502.cmd_buffer.clear();
+        r502.received.clear();
+        *r502.inflight_request.borrow_mut() = Some(Command::DeletChar { start_index: 1, num_to_delete: 1});
+
+        // and: a reply in the receive buffer
+        r502.received
+            .try_extend_from_slice(&[
+                0xef, 0x01, 0xff, 0xff, 0xff, 0xff, 0x07, 0x00, 0x03, 0x00, 0x00, 0x0a,
+            ])
+            .unwrap();
+
+        // when: parsing a reply
+        let r = r502.parse_reply();
+
+        // then: reply is ok
+        assert_eq!(r.is_ok(), true);
+
+        // and: the reply is correct
+        let reply = r.unwrap();
+        match reply {
+            Reply::DeletChar(DeletCharResult {
+                address,
+                confirmation_code,
+                checksum: _,
+            }) => {
+                assert_eq!(address, 0xffffffff);
+                match confirmation_code {
+                    DeletCharStatus::Success => (),
+                    _ => panic!("Expected DeletCharStatus::Success"),
+                };
+            }
+            _ => panic!("Expected Reply::DeletChar, got something else!"),
         };
     }
 }

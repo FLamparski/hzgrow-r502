@@ -4,6 +4,12 @@
 //! This is a work in progress and does not strive to meet all use cases of the device. However,
 //! it should cover the basics, and may possibly become a basis for other drivers for HZ Grow and
 //! similar modules, provided that the suppliers of those use a rougly similar API.
+//! 
+//! ## Basics
+//! 
+//! See the commands implemented by the driver in [`Command`](enum.Command.html).
+//! 
+//! Response types are all linked from [`Reply`](enum.Reply.html).
 //!
 //! ## Example
 //!
@@ -61,6 +67,6 @@ pub use crate::responses::{
     GenImgResult, GenImgStatus, Img2TzResult, Img2TzStatus, LoadCharResult, LoadCharStatus,
     MatchResult, MatchStatus, PasswordVerificationState, ReadSysParaResult, RegModelResult,
     RegModelStatus, Reply, SearchResult, SearchStatus, SystemParameters, TemplateNumResult,
-    TemplateNumStatus, VfyPwdResult,
+    TemplateNumStatus, VfyPwdResult, StoreResult, StoreStatus, DeletCharResult, DeletCharStatus,
 };
 pub use crate::utils::Error;
