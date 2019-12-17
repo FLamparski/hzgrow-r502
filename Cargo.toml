@@ -1,6 +1,6 @@
 [package]
 name = "hzgrow-r502"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["Filip Wieland <filiplamparski@gmail.com>"]
 homepage = "https://github.com/FLamparski/hzgrow-r502"
 repository = "https://github.com/FLamparski/hzgrow-r502"
@@ -21,7 +21,9 @@ maintenance = { status = "experimental" }
 [dependencies]
 nb = "0.1.2"
 embedded-hal = "0.2.3"
-byteorder = "1.3.2"
+[dependencies.byteorder]
+version = "1.3.2"
+default-features = false
 [dependencies.arrayvec]
 version = "0.5.1"
 default-features = false

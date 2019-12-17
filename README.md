@@ -3,13 +3,12 @@
 Uses `embedded-hal` and `arrayvec`. It's not intended to be a complete implementation of the
 R502 command set but rather enough for a simple fingerprint verification device.
 
-## Progress
+## Feature support
 
-- [x] **VerifyPassword** Performs a handshake with the device
-- [x] **ReadSysPara** Reads system status information
-- [x] **GenImg** Captures a fingerprint image
-- [x] **Img2Tz** Converts an image into an internal fingerprint representation
-- [x] **Search** Searches for fingerprints in the library
+* Authenticating with the device and querying status
+* Searching the fingerprint library
+* Verifying selected fingerprints
+* Enrolling and deleting fingerprints
 
 For more, see the [projects](https://github.com/FLamparski/hzgrow-r502/projects).
 
