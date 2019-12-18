@@ -17,6 +17,10 @@ For more, see the [projects](https://github.com/FLamparski/hzgrow-r502/projects)
 Some examples are meant to be run on a full PC rather than an embedded device. Use
 a serial to USB converter at 3.3V power and logic levels. I recommend the ESP-PROG.
 
+An example exists for the STM32F446RE microcontroller:
+
+* [Fingerprint search](https://github.com/FLamparski/stm32f446-fingerprint-detection/blob/master/src/main.rs#L49-L72)
+
 ## Contributing guidelines
 
 If you want to send a PR, please make sure that your changes work on a real R502 (if your changes
