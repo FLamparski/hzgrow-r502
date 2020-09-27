@@ -402,7 +402,7 @@ impl FromPayload for SystemParameters {
             security_level: BigEndian::read_u16(&payload[6..8]),
             device_address: BigEndian::read_u32(&payload[8..12]),
             packet_size: BigEndian::read_u16(&payload[12..14]),
-            baud_setting: BigEndian::read_u16(&payload[12..16]),
+            baud_setting: BigEndian::read_u16(&payload[14..16]),
         }
     }
 }
